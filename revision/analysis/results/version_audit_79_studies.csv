@@ -28,11 +28,11 @@ Zhong_2017,Zhong,2017,1986,original,FALSE,No version-display correction required
 Oon_2018,Oon,2018,"original (1993/2005), modified for CEUS",modified; original,FALSE,No version-display correction required
 Pitra_2018,Pitra,2018,original Bosniak (pre-2019),original,TRUE,Corrected Table 1 display from v2019 to original/pre-2019; analytic standardized coding was already original
 Mu_2019,Mu,2019,2005,unspecified,FALSE,No version-display correction required
-Shaish_2019,Shaish,2019,original (pre-2019),original,FALSE,No version-display correction required
+Shaish_2019,Shaish,2019,original (pre-2019),original,TRUE,Corrected Table 1 display from v2019 to original/pre-2019; analytic standardized coding was already original
 Verzotti_2019,Verzotti,2019,2005,unspecified,FALSE,No version-display correction required
 Bai_2020,Bai,2020,both,original; v2019,FALSE,No version-display correction required
 Lee_2020,Lee,2020,2019,v2019,FALSE,No version-display correction required
-Lerchbaumer_2020,Lerchbaumer,2020,Original (pre-2019),original; unspecified,FALSE,No version-display correction required
+Lerchbaumer_2020,Lerchbaumer,2020,Original (pre-2019),original; unspecified,TRUE,Corrected Table 1 display from v2019 to original/pre-2019; analytic standardized coding was already original
 Lucocq_2020,Lucocq,2020,Not specified,unspecified,FALSE,No version-display correction required
 Pacheco_2020,Pacheco,2020,both CBC (current/2005) and BC19 (version 2019),original; v2019,FALSE,No version-display correction required
 Tse_2020,Tse,2020,original and v2019,original; v2019,FALSE,No version-display correction required
@@ -42,7 +42,7 @@ Chan_2021,Chan,2021,original AND v2019,original; v2019,FALSE,No version-display 
 Como_2021,Como,2021,modified Bosniak (categories 0-5 for CEUS per EFSUMB-adapted scheme),both; modified,FALSE,No version-display correction required
 Elbanna_2021,Elbanna,2021,v2019 (proposed),v2019,FALSE,No version-display correction required
 Frumer_2021,Frumer,2021,modified Bosniak for pediatrics,modified,FALSE,No version-display correction required
-Lucocq_2021,Lucocq,2021,"Original (2005 revision, pre-2019)",original,FALSE,No version-display correction required
+Lucocq_2021,Lucocq,2021,"Original (2005 revision, pre-2019)",original,TRUE,Corrected Table 1 display from v2019 to original/pre-2019; analytic standardized coding was already original
 Osman_2021,Osman,2021,Both Original (v2005) and v2019 compared,both; original; v2019,FALSE,No version-display correction required
 Park_2021,Park,2021,both version 2005 and version 2019,original; v2019,FALSE,No version-display correction required
 Tse_2021_a,Tse,2021,v2019 and original (prior),original; v2019,FALSE,No version-display correction required

@@ -656,7 +656,8 @@ version_audit <- stud %>%
   mutate(
     submitted_table_display_error = study_id %in% c(
       "Rosenkrantz_2014", "Seppala_2014", "Rocca_2016",
-      "Ragel_2016", "Sanz_2016", "Pitra_2018"
+      "Ragel_2016", "Sanz_2016", "Pitra_2018",
+      "Shaish_2019", "Lerchbaumer_2020", "Lucocq_2021"
     ),
     audit_disposition = if_else(
       submitted_table_display_error,

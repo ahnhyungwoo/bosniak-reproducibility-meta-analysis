@@ -1,3 +1,3 @@
 record_type,record_id,field,submitted_value,revised_value,reason,evidence
 study,Chang_2015,publication_type,journal_article,conference_abstract,"The source is poster FR-PO381 in the JASN 2015 conference supplement; it is not a full-length article.","Source report, page 442A"
-table_display,"Rosenkrantz_2014; Seppala_2014; Rocca_2016; Ragel_2016; Sanz_2016; Pitra_2018",Bosniak_version,v2019,original/pre-2019,"A display-generation rule classified all six pre-2019 labels incorrectly. Source coding and analytic standardized-version fields were already original/pre-2019.","studies.csv; comparisons.csv"
+table_display,"Rosenkrantz_2014; Seppala_2014; Rocca_2016; Ragel_2016; Sanz_2016; Pitra_2018; Lerchbaumer_2020; Lucocq_2021; Shaish_2019",Bosniak_version,v2019,original/pre-2019,"A display-generation rule classified all nine pre-2019 labels incorrectly. Source coding and analytic standardized-version fields were already original/pre-2019.","studies.csv; comparisons.csv"
