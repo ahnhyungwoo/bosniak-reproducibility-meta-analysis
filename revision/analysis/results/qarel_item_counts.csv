@@ -1,0 +1,8 @@
+item,domain,studies_total,yes,no,unclear,not_applicable,missing,applicable_denominator,yes_pct_all_studies,yes_pct_applicable
+Q1,Representative spectrum,79,18,29,32,0,0,79,22.8,22.8
+Q2,Adequate rater description,79,55,5,19,0,0,79,69.6,69.6
+Q3,Independent or blinded interpretation,79,53,5,11,10,0,69,67.1,76.8
+Q4,Blinding to clinical information,79,30,0,49,0,0,79,38,38
+Q5,Appropriate time interval or washout,79,23,5,17,34,0,45,29.1,51.1
+Q6,Classification criteria specified,79,70,0,9,0,0,79,88.6,88.6
+Q7,Appropriate statistical analysis,79,65,0,14,0,0,79,82.3,82.3

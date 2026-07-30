@@ -1,0 +1,9 @@
+analytic_stratum,variance_source,effects,studies,clusters
+inter-modality,n_approximation,22,20,20
+inter-modality,reported_CI,17,10,13
+inter-modality,reported_SE,2,1,1
+inter-reader,n_approximation,99,29,32
+inter-reader,reported_CI,79,19,21
+inter-version,n_approximation,15,7,8
+intra-reader,n_approximation,8,2,2
+intra-reader,reported_CI,8,2,2

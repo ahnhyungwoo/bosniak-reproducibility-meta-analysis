@@ -1,0 +1,80 @@
+study_id,first_author,year,bosniak_version,analytic_standardized_versions,submitted_table_display_error,audit_disposition
+Siegel_1997,Siegel,1997,"original (1986, pre-IIF category)",original,FALSE,No version-display correction required
+Bielsa_Gali_1999,Bielsa Gali,1999,original,original; unspecified,FALSE,No version-display correction required
+Israel_2004,Israel,2004,2005 (original with IIF),original,FALSE,No version-display correction required
+Benjaminov_2006,Benjaminov,2006,2005,original,FALSE,No version-display correction required
+Ascenti_2007,Ascenti,2007,2005,original; unspecified,FALSE,No version-display correction required
+Park_2007,Park,2007,2005,original; unspecified,FALSE,No version-display correction required
+Clevert_2008,Clevert,2008,original (Bosniak 1986/2003/2005),modified; original,FALSE,No version-display correction required
+Bertolotto_2010,Bertolotto,2010,original (Israel & Bosniak 2005 formulation),original,FALSE,No version-display correction required
+Ignee_2010,Ignee,2010,"original (1993), modified for CEUS",modified; original,FALSE,No version-display correction required
+Kim_2010,Kim,2010,2005 (Israel & Bosniak update),original,FALSE,No version-display correction required
+Peng_2010,Peng,2010,modified Bosniak for pediatric (Wallis 2008),modified,FALSE,No version-display correction required
+El-Mokadem_2014,El-Mokadem,2014,original (1993/2005),original,FALSE,No version-display correction required
+Foukal_2014,Foukal,2014,original (2005) for CT; Ascenti modification for CEUS,modified; original,FALSE,No version-display correction required
+Rosenkrantz_2014,Rosenkrantz,2014,original Bosniak (pre-2019),original,TRUE,Corrected Table 1 display from v2019 to original/pre-2019; analytic standardized coding was already original
+Seppala_2014,Seppala,2014,"original (pre-2019, includes IIF)",original,TRUE,Corrected Table 1 display from v2019 to original/pre-2019; analytic standardized coding was already original
+Bertolotto_2015,Bertolotto,2015,"original (Bosniak criteria for CEUS per Quaia 2008, Ascenti 2007)",modified,FALSE,No version-display correction required
+Chang_2015,Chang,2015,NA,unspecified,FALSE,No version-display correction required
+Graumann_2015,Graumann,2015,2005 (original with IIF from 1993),original,FALSE,No version-display correction required
+Karmazyn_2015,Karmazyn,2015,"modified Bosniak for US (4 categories, pediatric)",modified,FALSE,No version-display correction required
+Ferreira_2016,Ferreira,2016,2005,original,FALSE,No version-display correction required
+Graumann_2016,Graumann,2016,2005 (original),original; unspecified,FALSE,No version-display correction required
+Ragel_2016,Ragel,2016,original Bosniak (pre-2019),original; unspecified,TRUE,Corrected Table 1 display from v2019 to original/pre-2019; analytic standardized coding was already original
+Rocca_2016,Rocca,2016,original Bosniak (pre-2019),unspecified,TRUE,Corrected Table 1 display from v2019 to original/pre-2019; analytic standardized coding was already original
+Sanz_2016,Sanz,2016,original (pre-2019),original; unspecified,TRUE,Corrected Table 1 display from v2019 to original/pre-2019; analytic standardized coding was already original
+Destefani_2017,Destefani,2017,2005,original,FALSE,No version-display correction required
+Zhong_2017,Zhong,2017,1986,original,FALSE,No version-display correction required
+Oon_2018,Oon,2018,"original (1993/2005), modified for CEUS",modified; original,FALSE,No version-display correction required
+Pitra_2018,Pitra,2018,original Bosniak (pre-2019),original,TRUE,Corrected Table 1 display from v2019 to original/pre-2019; analytic standardized coding was already original
+Mu_2019,Mu,2019,2005,unspecified,FALSE,No version-display correction required
+Shaish_2019,Shaish,2019,original (pre-2019),original,FALSE,No version-display correction required
+Verzotti_2019,Verzotti,2019,2005,unspecified,FALSE,No version-display correction required
+Bai_2020,Bai,2020,both,original; v2019,FALSE,No version-display correction required
+Lee_2020,Lee,2020,2019,v2019,FALSE,No version-display correction required
+Lerchbaumer_2020,Lerchbaumer,2020,Original (pre-2019),original; unspecified,FALSE,No version-display correction required
+Lucocq_2020,Lucocq,2020,Not specified,unspecified,FALSE,No version-display correction required
+Pacheco_2020,Pacheco,2020,both CBC (current/2005) and BC19 (version 2019),original; v2019,FALSE,No version-display correction required
+Tse_2020,Tse,2020,original and v2019,original; v2019,FALSE,No version-display correction required
+Yenice_2020,Yenice,2020,1986,original,FALSE,No version-display correction required
+Angelini_2021,Angelini,2021,original (1993/2005) vs v2019,original; v2019,FALSE,No version-display correction required
+Chan_2021,Chan,2021,original AND v2019,original; v2019,FALSE,No version-display correction required
+Como_2021,Como,2021,modified Bosniak (categories 0-5 for CEUS per EFSUMB-adapted scheme),both; modified,FALSE,No version-display correction required
+Elbanna_2021,Elbanna,2021,v2019 (proposed),v2019,FALSE,No version-display correction required
+Frumer_2021,Frumer,2021,modified Bosniak for pediatrics,modified,FALSE,No version-display correction required
+Lucocq_2021,Lucocq,2021,"Original (2005 revision, pre-2019)",original,FALSE,No version-display correction required
+Osman_2021,Osman,2021,Both Original (v2005) and v2019 compared,both; original; v2019,FALSE,No version-display correction required
+Park_2021,Park,2021,both version 2005 and version 2019,original; v2019,FALSE,No version-display correction required
+Tse_2021_a,Tse,2021,v2019 and original (prior),original; v2019,FALSE,No version-display correction required
+Tse_2021_b,Tse,2021,v2019 and original,original; v2019,FALSE,No version-display correction required
+Tshering_Vogel_2021,Tshering Vogel,2021,2005,original; unspecified,FALSE,No version-display correction required
+Yan_2021,Yan,2021,v2019 and original,original; v2019,FALSE,No version-display correction required
+Arita_2022,Arita,2022,2019,v2019,FALSE,No version-display correction required
+Bai_2022,Bai,2022,2019,v2019,FALSE,No version-display correction required
+Kang_2022,Kang,2022,2019,v2019,FALSE,No version-display correction required
+Peard_2022,Peard,2022,"modified Bosniak (mBosniak) for pediatric (4 categories: 1-4, no IIF)",modified,FALSE,No version-display correction required
+Shampain_2022,Shampain,2022,v2005 and v2019,original; v2019,FALSE,No version-display correction required
+Tse_2022,Tse,2022,v2019,v2019,FALSE,No version-display correction required
+Almalki_2023,Almalki,2023,2019,v2019,FALSE,No version-display correction required
+Chandrasekar_2023,Chandrasekar,2023,both,original; v2019,FALSE,No version-display correction required
+Dana_2023,Dana,2023,v2005 AND v2019,original; v2019,FALSE,No version-display correction required
+Das_2023,Das,2023,v2019 (reassigned from original to v2019),EFSUMB; v2019,FALSE,No version-display correction required
+Gomma_2023,Gomma,2023,both,original; v2019,FALSE,No version-display correction required
+Herms_2023,Herms,2023,CEUS-Bosniak based on 2020 European proposal (EFSUMB); CT/MRI-Bosniak (version not specified),EFSUMB; unspecified,FALSE,No version-display correction required
+Járay_2023,Járay,2023,2005,unspecified,FALSE,No version-display correction required
+Sun_2023,Sun,2023,both,original; v2019,FALSE,No version-display correction required
+Walmer_2023,Walmer,2023,modified CEUS-adapted (based on original),modified,FALSE,No version-display correction required
+Guo_2024,Guo,2024,2019,v2019,FALSE,No version-display correction required
+Jin_2024,Jin,2024,CEUS Bosniak (EFSUMB 2020),EFSUMB,FALSE,No version-display correction required
+Kang_2024,Kang,2024,2019,v2019,FALSE,No version-display correction required
+Lucocq_2024,Lucocq,2024,Both v2005 and v2019 compared,original; v2019,FALSE,No version-display correction required
+Münch_2024,Münch,2024,EFSUMB 2020 adapted Bosniak classification for CEUS,EFSUMB,FALSE,No version-display correction required
+Reizine_2024,Reizine,2024,v2019,v2019,FALSE,No version-display correction required
+Abufaraj_2025,Abufaraj,2025,both,original; v2019,FALSE,No version-display correction required
+He_2025,He,2025,2019,v2019,FALSE,No version-display correction required
+Kang_2025,Kang,2025,2019,v2019,FALSE,No version-display correction required
+Anshulmeena_2026,Anshulmeena,2026,2019,v2019,FALSE,No version-display correction required
+He_2026,He,2026,2019 (CT/MRI); US-adapted Bosniak proposed by authors,modified; v2019,FALSE,No version-display correction required
+Jin_2026,Jin,2026,2019,EFSUMB; v2019,FALSE,No version-display correction required
+Sebastià_2026,Sebastià,2026,v2005 and v2019,original; v2019,FALSE,No version-display correction required
+Urraro_2026,Urraro,2026,2019,v2019,FALSE,No version-display correction required

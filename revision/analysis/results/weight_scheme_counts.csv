@@ -1,0 +1,11 @@
+analytic_stratum,weight_scheme_report,effects,studies,clusters
+inter-modality,linear,6,3,3
+inter-modality,quadratic,1,1,1
+inter-modality,unspecified,3,3,3
+inter-modality,unweighted,26,21,23
+inter-modality,weighted_unspecified,5,3,4
+inter-reader,linear,18,8,8
+inter-reader,quadratic,18,5,5
+inter-reader,unspecified,43,9,12
+inter-reader,unweighted,50,15,15
+inter-reader,weighted_unspecified,49,13,15
