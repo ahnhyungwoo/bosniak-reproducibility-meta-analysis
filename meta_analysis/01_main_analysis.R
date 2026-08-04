@@ -332,6 +332,39 @@ cat(paste(rep("=", 70), collapse = ""), "\n")
 dat_kappa <- dat %>% filter(stat_type == "kappa")
 cat(sprintf("\nKappa-only: %d effects\n", nrow(dat_kappa)))
 
+validate_opes_selection <- function(data) {
+  audit <- data %>%
+    filter(analytic_stratum %in% c(
+      "inter-reader", "inter-modality", "intra-reader", "inter-version"
+    )) %>%
+    group_by(analytic_stratum, study_id) %>%
+    summarise(
+      selected_effects = sum(opes_include == 1, na.rm = TRUE),
+      selected_clusters = n_distinct(
+        dep_id[coalesce(opes_include == 1, FALSE)], na.rm = TRUE
+      ),
+      .groups = "drop"
+    )
+
+  invalid <- audit %>%
+    filter(selected_effects != 1 | selected_clusters != 1)
+  if (nrow(invalid) > 0) {
+    details <- paste(
+      sprintf(
+        "%s/%s: effects=%d, clusters=%d",
+        invalid$analytic_stratum,
+        invalid$study_id,
+        invalid$selected_effects,
+        invalid$selected_clusters
+      ),
+      collapse = "; "
+    )
+    stop("Invalid one-per-study estimate selection: ", details)
+  }
+}
+
+validate_opes_selection(dat_kappa)
+
 # --- Inter-reader ---
 ir_k <- dat_kappa %>% filter(analytic_stratum == "inter-reader")
 ir_res <- run_rve_cr2(ir_k, "Inter-reader PRIMARY (kappa-only)")
@@ -373,437 +406,4 @@ cat(paste(rep("=", 70), collapse = ""), "\n")
 # ---- 4A. UNIVARIABLE (main 5) ----
 cat("\n--- Univariable: Main 5 moderators ---\n")
 
-# 1. n_categories (task difficulty â€” most important)
-ir_k_nc <- ir_k %>%
-  filter(ncat_group %in% c("2-3", "4-5")) %>%
-  mutate(is_full = ifelse(ncat_group == "4-5", 1, 0))
-run_moderator(ir_k_nc, yi ~ is_full, "IR.1 n_categories (4-5 vs 2-3)")
-
-# 2. weight_scheme (weighted vs unweighted, classified only)
-ir_k_wt <- ir_k %>%
-  filter(wt_group %in% c("weighted", "unweighted")) %>%
-  mutate(is_weighted = ifelse(wt_group == "weighted", 1, 0))
-run_moderator(ir_k_wt, yi ~ is_weighted, "IR.2 weight_scheme (weighted vs UW)")
-
-# 3. Modality (CT vs MRI vs CEUS_US)
-ir_k_mod <- ir_k %>%
-  filter(mod_group %in% c("CT", "MRI", "CEUS_US")) %>%
-  mutate(modality = factor(mod_group, levels = c("CT", "MRI", "CEUS_US")))
-run_moderator(ir_k_mod, yi ~ modality, "IR.3 modality (CT/MRI/CEUS_US)")
-
-# 4a. Bosniak version â€” CT-only subset (PRIMARY: removes modality confounding)
-ir_k_ver_ct <- ir_k %>%
-  filter(std_modality_1 == "CT",
-         std_version_1 %in% c("original", "v2019")) %>%
-  mutate(is_v2019 = ifelse(std_version_1 == "v2019", 1, 0))
-cat(sprintf("    CT-only version subset: k=%d (original=%d, v2019=%d)\n",
-            nrow(ir_k_ver_ct),
-            sum(ir_k_ver_ct$is_v2019 == 0),
-            sum(ir_k_ver_ct$is_v2019 == 1)))
-run_moderator(ir_k_ver_ct, yi ~ is_v2019,
-              "IR.4a version CT-only (v2019 vs original)")
-
-# 4b. Bosniak version â€” all modalities (EXPLORATORY: modality-confounded)
-ir_k_ver <- ir_k %>%
-  filter(!is.na(ver_group)) %>%
-  mutate(is_v2019 = ifelse(ver_group == "v2019", 1, 0))
-run_moderator(ir_k_ver, yi ~ is_v2019,
-              "IR.4b version all-mod (v2019 vs pre2019, EXPLORATORY)")
-
-# 5. Publication type (fulltext vs abstract)
-ir_k_pub <- ir_k %>%
-  filter(!is.na(pub_type)) %>%
-  mutate(is_abstract = ifelse(pub_type == "abstract", 1, 0))
-run_moderator(ir_k_pub, yi ~ is_abstract, "IR.5 pub_type (abstract vs fulltext)")
-
-# ---- 4B. UNIVARIABLE (exploratory) ----
-cat("\n--- Univariable: Exploratory ---\n")
-
-# 6. log(n_cysts) â€” sample size effect
-ir_k_lnc <- ir_k %>% filter(!is.na(log_nc))
-run_moderator(ir_k_lnc, yi ~ log_nc, "IR.6 log(n_cysts)")
-
-# 7. n_readers (2 vs 3+)
-ir_k_nr <- ir_k %>% filter(!is.na(nr_group)) %>%
-  mutate(is_3plus = ifelse(nr_group == "3plus", 1, 0))
-run_moderator(ir_k_nr, yi ~ is_3plus, "IR.7 n_readers (3+ vs 2)")
-
-# 8. Reader experience (continuous, mean years)
-ir_k_exp <- ir_k %>% filter(!is.na(exp_mean))
-cat(sprintf("    Experience data available: k=%d/%d\n", nrow(ir_k_exp), nrow(ir_k)))
-run_moderator(ir_k_exp, yi ~ exp_mean, "IR.8 experience (continuous)")
-
-# 9. Specialty (subspecialty vs non-subspecialty)
-ir_k_spec <- ir_k %>%
-  filter(!is.na(spec_group)) %>%
-  mutate(is_sub = ifelse(spec_group == "subspecialty", 1, 0))
-cat(sprintf("    Specialty data available: k=%d/%d (sub=%d, non=%d)\n",
-            nrow(ir_k_spec), nrow(ir_k),
-            sum(ir_k_spec$is_sub == 1), sum(ir_k_spec$is_sub == 0)))
-run_moderator(ir_k_spec, yi ~ is_sub, "IR.9 specialty (subspecialty vs other)")
-
-# 10. Blinding (blinded vs unclear/not)
-ir_k_blind <- ir_k %>% filter(!is.na(is_blinded))
-cat(sprintf("    Blinding data available: k=%d/%d (blinded=%d, not=%d)\n",
-            nrow(ir_k_blind), nrow(ir_k),
-            sum(ir_k_blind$is_blinded == 1), sum(ir_k_blind$is_blinded == 0)))
-run_moderator(ir_k_blind, yi ~ is_blinded, "IR.10 blinding (blinded vs other)")
-
-# 11. Reader structure (pooled vs non-pooled)
-ir_k_pool <- ir_k %>% filter(!is.na(is_pooled))
-cat(sprintf("    Reader structure: k=%d (pooled=%d, non-pooled=%d)\n",
-            nrow(ir_k_pool), sum(ir_k_pool$is_pooled == 1),
-            sum(ir_k_pool$is_pooled == 0)))
-run_moderator(ir_k_pool, yi ~ is_pooled, "IR.11 reader_structure (pooled vs other)")
-
-# 12. Publication year (continuous)
-ir_k_yr <- ir_k %>% filter(!is.na(pub_year))
-run_moderator(ir_k_yr, yi ~ pub_year, "IR.12 publication year")
-
-# 13. QAREL quality (Low vs Moderate/High)
-ir_k_rob <- ir_k %>% filter(!is.na(is_low_rob))
-cat(sprintf("    QAREL quality: k=%d (Low=%d, Moderate/High=%d)\n",
-            nrow(ir_k_rob), sum(ir_k_rob$is_low_rob == 1),
-            sum(ir_k_rob$is_low_rob == 0)))
-run_moderator(ir_k_rob, yi ~ is_low_rob, "IR.13 QAREL quality (Low vs Mod/High)")
-
-# 13b. QAREL yes-count (continuous)
-ir_k_qs <- ir_k %>% filter(!is.na(qarel_score))
-run_moderator(ir_k_qs, yi ~ qarel_score, "IR.13b QAREL yes-count (continuous)")
-
-# 14. Study design (prospective vs retrospective)
-ir_k_des <- ir_k %>% filter(!is.na(is_prospective))
-cat(sprintf("    IR design data available: k=%d (retro=%d, prosp=%d)\n",
-            nrow(ir_k_des), sum(ir_k_des$is_prospective == 0),
-            sum(ir_k_des$is_prospective == 1)))
-run_moderator(ir_k_des, yi ~ is_prospective, "IR.14 design (prospective vs retrospective)")
-
-# 15. Region (North America / Asia / Europe)
-ir_k_reg <- ir_k %>%
-  filter(!is.na(region_cat)) %>%
-  mutate(region_cat = factor(region_cat, levels = c("North_America", "Asia", "Europe")))
-cat(sprintf("    IR region data available: k=%d (NA=%d, Asia=%d, Europe=%d)\n",
-            nrow(ir_k_reg),
-            sum(ir_k_reg$region_cat == "North_America"),
-            sum(ir_k_reg$region_cat == "Asia"),
-            sum(ir_k_reg$region_cat == "Europe")))
-run_moderator(ir_k_reg, yi ~ region_cat, "IR.15 region (NA/Asia/Europe)")
-
-# ---- 4C. SENSITIVITY: weight 3-level (weighted/UW/unspecified) ----
-cat("\n--- Sensitivity: weight_scheme 3-level ---\n")
-ir_k_wt3 <- ir_k %>%
-  filter(!is.na(wt_3level)) %>%
-  mutate(wt3 = factor(wt_3level, levels = c("unweighted", "weighted", "unspecified")))
-run_moderator(ir_k_wt3, yi ~ wt3, "IR.S weight_scheme 3-level")
-
-# ---- 4D. MULTIVARIABLE (3 models) ----
-cat("\n--- Multivariable meta-regression ---\n")
-
-# Model 1a: n_categories + version â€” CT-only (PRIMARY, no modality confound)
-ir_k_mv1a <- ir_k %>%
-  filter(std_modality_1 == "CT",
-         std_version_1 %in% c("original", "v2019"),
-         ncat_group %in% c("2-3", "4-5")) %>%
-  mutate(is_full = ifelse(ncat_group == "4-5", 1, 0),
-         is_v2019 = ifelse(std_version_1 == "v2019", 1, 0))
-run_moderator(ir_k_mv1a, yi ~ is_full + is_v2019,
-              "IR.MV1a CT-only: ncat + version")
-
-# Model 1b: n_categories + modality + version â€” all data (EXPLORATORY)
-ir_k_mv1b <- ir_k %>%
-  filter(ncat_group %in% c("2-3", "4-5"),
-         mod_group %in% c("CT", "MRI", "CEUS_US"),
-         !is.na(ver_group)) %>%
-  mutate(is_full = ifelse(ncat_group == "4-5", 1, 0),
-         modality = factor(mod_group, levels = c("CT", "MRI", "CEUS_US")),
-         is_v2019 = ifelse(ver_group == "v2019", 1, 0))
-run_moderator(ir_k_mv1b, yi ~ is_full + modality + is_v2019,
-              "IR.MV1b all-mod: ncat + modality + version (EXPLORATORY)")
-
-# Model 2: n_categories + weight_scheme (methodological)
-ir_k_mv2 <- ir_k %>%
-  filter(ncat_group %in% c("2-3", "4-5"),
-         wt_group %in% c("weighted", "unweighted")) %>%
-  mutate(is_full = ifelse(ncat_group == "4-5", 1, 0),
-         is_weighted = ifelse(wt_group == "weighted", 1, 0))
-run_moderator(ir_k_mv2, yi ~ is_full + is_weighted,
-              "IR.MV2 ncat + weight_scheme")
-
-# Model 3: experience + n_categories (clinical + task difficulty)
-ir_k_mv3 <- ir_k %>%
-  filter(!is.na(exp_mean), ncat_group %in% c("2-3", "4-5")) %>%
-  mutate(is_full = ifelse(ncat_group == "4-5", 1, 0))
-cat(sprintf("    MV3 experience + ncat: k=%d\n", nrow(ir_k_mv3)))
-run_moderator(ir_k_mv3, yi ~ exp_mean + is_full,
-              "IR.MV3 experience + ncat")
-
-
-# ============================================================
-# 4E. META-REGRESSION: Inter-modality kappa-only
-# ============================================================
-
-cat("\n", paste(rep("=", 70), collapse = ""), "\n")
-cat("META-REGRESSION: Inter-modality kappa-only\n")
-cat(paste(rep("=", 70), collapse = ""), "\n")
-
-cat("\n--- Univariable ---\n")
-
-# 1. n_categories
-im_k_nc <- im_k %>%
-  filter(ncat_group %in% c("2-3", "4-5")) %>%
-  mutate(is_full = ifelse(ncat_group == "4-5", 1, 0))
-run_moderator(im_k_nc, yi ~ is_full, "IM.1 n_categories (4-5 vs 2-3)")
-
-# NOTE: version moderator REMOVED for inter-modality.
-# Original Bosniak = CT-only; v2019 = CT+MRI. In IM comparisons,
-# "version" is inseparable from classification scope (which modalities
-# the schema was designed to cover). CT-CEUS comparisons further
-# complicate interpretation since neither version covers CEUS.
-
-# 2. modality pair (CT_MRI vs CT_CEUS vs other)
-im_k_mp <- im_k %>%
-  filter(mod_pair %in% c("CT_MRI", "CT_CEUS", "other")) %>%
-  mutate(pair = factor(mod_pair, levels = c("CT_MRI", "CT_CEUS", "other")))
-run_moderator(im_k_mp, yi ~ pair, "IM.2 modality_pair (CT-MRI/CT-CEUS/other)")
-
-# 3. log(n_cysts)
-im_k_lnc <- im_k %>% filter(!is.na(log_nc))
-run_moderator(im_k_lnc, yi ~ log_nc, "IM.3 log(n_cysts)")
-
-# 4. publication type
-im_k_pub <- im_k %>%
-  filter(!is.na(pub_type)) %>%
-  mutate(is_abstract = ifelse(pub_type == "abstract", 1, 0))
-run_moderator(im_k_pub, yi ~ is_abstract, "IM.4 pub_type (abstract vs fulltext)")
-cat("    Interpretation: not interpretable because the abstract level contains only one study and one dependency cluster.\n")
-
-# 5. Reader experience (continuous)
-im_k_exp <- im_k %>% filter(!is.na(exp_mean))
-cat(sprintf("    IM experience data available: k=%d/%d\n", nrow(im_k_exp), nrow(im_k)))
-run_moderator(im_k_exp, yi ~ exp_mean, "IM.5 experience (continuous)")
-
-# 6. Specialty (subspecialty vs other)
-im_k_spec <- im_k %>%
-  filter(!is.na(spec_group)) %>%
-  mutate(is_sub = ifelse(spec_group == "subspecialty", 1, 0))
-run_moderator(im_k_spec, yi ~ is_sub, "IM.6 specialty (subspecialty vs other)")
-
-# 7. Blinding (blinded vs other)
-im_k_blind <- im_k %>% filter(!is.na(is_blinded))
-run_moderator(im_k_blind, yi ~ is_blinded, "IM.7 blinding (blinded vs other)")
-
-# 8. Publication year (continuous)
-im_k_yr <- im_k %>% filter(!is.na(pub_year))
-run_moderator(im_k_yr, yi ~ pub_year, "IM.8 publication year")
-
-# 9. Weight scheme (weighted vs unweighted)
-im_k_wt <- im_k %>%
-  filter(wt_group %in% c("weighted", "unweighted")) %>%
-  mutate(is_weighted = ifelse(wt_group == "weighted", 1, 0))
-run_moderator(im_k_wt, yi ~ is_weighted, "IM.9 weight_scheme (weighted vs UW)")
-
-# 10. n_readers (2 vs 3+ â€” for IM this may vary with 1-reader designs)
-im_k_nr <- im_k %>%
-  filter(!is.na(n_readers)) %>%
-  mutate(nr_cat = case_when(
-    n_readers == 1 ~ "1",
-    n_readers == 2 ~ "2",
-    n_readers >= 3 ~ "3plus",
-    TRUE ~ NA_character_
-  )) %>%
-  filter(!is.na(nr_cat))
-if (length(unique(im_k_nr$nr_cat)) >= 2) {
-  im_k_nr$nr_cat <- factor(im_k_nr$nr_cat, levels = c("1", "2", "3plus"))
-  run_moderator(im_k_nr, yi ~ nr_cat, "IM.10 n_readers (1/2/3+)")
-}
-
-# 11. QAREL quality (Low vs Moderate/High)
-im_k_rob <- im_k %>% filter(!is.na(is_low_rob))
-cat(sprintf("    IM QAREL quality: k=%d (Low=%d, Moderate/High=%d)\n",
-            nrow(im_k_rob), sum(im_k_rob$is_low_rob == 1),
-            sum(im_k_rob$is_low_rob == 0)))
-run_moderator(im_k_rob, yi ~ is_low_rob, "IM.11 QAREL quality (Low vs Mod/High)")
-
-# 11b. QAREL yes-count (continuous)
-im_k_qs <- im_k %>% filter(!is.na(qarel_score))
-run_moderator(im_k_qs, yi ~ qarel_score, "IM.11b QAREL yes-count (continuous)")
-
-# 12. Study design (prospective vs retrospective)
-im_k_des <- im_k %>% filter(!is.na(is_prospective))
-cat(sprintf("    IM design data available: k=%d (retro=%d, prosp=%d)\n",
-            nrow(im_k_des), sum(im_k_des$is_prospective == 0),
-            sum(im_k_des$is_prospective == 1)))
-run_moderator(im_k_des, yi ~ is_prospective, "IM.12 design (prospective vs retrospective)")
-
-# 13. Region (North America / Asia / Europe)
-im_k_reg <- im_k %>%
-  filter(!is.na(region_cat)) %>%
-  mutate(region_cat = factor(region_cat, levels = c("North_America", "Asia", "Europe")))
-cat(sprintf("    IM region data available: k=%d (NA=%d, Asia=%d, Europe=%d)\n",
-            nrow(im_k_reg),
-            sum(im_k_reg$region_cat == "North_America"),
-            sum(im_k_reg$region_cat == "Asia"),
-            sum(im_k_reg$region_cat == "Europe")))
-run_moderator(im_k_reg, yi ~ region_cat, "IM.13 region (NA/Asia/Europe)")
-
-
-# ============================================================
-# 5. SENSITIVITY 1: Weighted kappa only (+ AT-derived LW)
-# ============================================================
-
-cat("\n", paste(rep("=", 70), collapse = ""), "\n")
-cat("SENSITIVITY 1: Weighted kappa only (+ AT-derived LW)\n")
-cat(paste(rep("=", 70), collapse = ""), "\n")
-
-# Prepare AT-derived LW dataset through the same pipeline as primary
-dat_at_lw <- comp %>%
-  filter(exclude == "at_derived_lw_sensitivity") %>%
-  left_join(stud %>% select(study_id, year, publication_type, study_design),
-            by = "study_id") %>%
-  left_join(qarel %>% select(study_id, overall_rob, qarel_yes_count),
-            by = "study_id") %>%
-  mutate(
-    kappa = as.numeric(kappa),
-    nc = as.numeric(n_cysts),
-    stat_type = "kappa",
-    stat = kappa,
-    stat_clamped = pmin(pmax(stat, -0.995), 0.995),
-    yi = atanh(stat_clamped),
-    vi_n = ifelse(!is.na(nc) & nc > 3, 1 / (nc - 3), NA_real_),
-    vi = vi_n,
-    wt_group = "weighted"
-  ) %>%
-  filter(!is.na(yi) & !is.na(vi) & vi > 0)
-cat(sprintf("AT-derived LW rows loaded: %d\n", nrow(dat_at_lw)))
-
-at_lw_ir <- dat_at_lw %>% filter(analytic_stratum == "inter-reader")
-at_lw_im <- dat_at_lw %>% filter(analytic_stratum == "inter-modality")
-
-# Weighted sensitivity: author-reported weighted + AT-derived LW
-ir_wk <- bind_rows(
-  ir_k %>% filter(wt_group == "weighted"),
-  at_lw_ir
-)
-ir_wk_res <- run_rve_cr2(ir_wk, "IR weighted kappa (+AT-derived LW)")
-add_row("IR weighted RVE", ir_wk_res, ir_wk_res$k, ir_wk_res$n_clusters)
-
-im_wk <- bind_rows(
-  im_k %>% filter(wt_group == "weighted"),
-  at_lw_im
-)
-im_wk_res <- run_rve_cr2(im_wk, "IM weighted kappa (+AT-derived LW)")
-
-
-# ============================================================
-# 6. SENSITIVITY 2: Unweighted kappa only
-# ============================================================
-
-cat("\n", paste(rep("=", 70), collapse = ""), "\n")
-cat("SENSITIVITY 2: Unweighted kappa only\n")
-cat(paste(rep("=", 70), collapse = ""), "\n")
-
-ir_uk <- ir_k %>% filter(wt_group == "unweighted")
-ir_uk_res <- run_rve_cr2(ir_uk, "IR unweighted kappa")
-add_row("IR unweighted RVE", ir_uk_res, ir_uk_res$k, ir_uk_res$n_clusters)
-
-im_uk <- im_k %>% filter(wt_group == "unweighted")
-im_uk_res <- run_rve_cr2(im_uk, "IM unweighted kappa")
-add_row("IM unweighted RVE", im_uk_res, im_uk_res$k, im_uk_res$n_clusters)
-
-
-# ============================================================
-# 7. SENSITIVITY 3: 5-category kappa only
-# ============================================================
-
-cat("\n", paste(rep("=", 70), collapse = ""), "\n")
-cat("SENSITIVITY 3: 5-category kappa only\n")
-cat(paste(rep("=", 70), collapse = ""), "\n")
-
-ir_5c <- ir_k %>% filter(n_categories == 5)
-ir_5c_res <- run_rve_cr2(ir_5c, "IR 5-cat kappa")
-add_row("IR 5-cat RVE", ir_5c_res, ir_5c_res$k, ir_5c_res$n_clusters)
-
-im_5c <- im_k %>% filter(n_categories == 5)
-im_5c_res <- run_rve_cr2(im_5c, "IM 5-cat kappa")
-add_row("IM 5-cat RVE", im_5c_res, im_5c_res$k, im_5c_res$n_clusters)
-
-
-# ============================================================
-# 8. EXPLORATORY: All metrics pooled
-# ============================================================
-
-cat("\n", paste(rep("=", 70), collapse = ""), "\n")
-cat("EXPLORATORY: All metrics pooled (kappa + Gwet + ICC)\n")
-cat(paste(rep("=", 70), collapse = ""), "\n")
-
-ir_all <- dat %>% filter(analytic_stratum == "inter-reader")
-ir_all_res <- run_rve_cr2(ir_all, "IR all metrics")
-add_row("IR all-metric RVE", ir_all_res, ir_all_res$k, ir_all_res$n_clusters)
-
-# stat_type moderator
-ir_all_st <- ir_all %>%
-  mutate(stat_type = factor(stat_type, levels = c("kappa", "gwet", "icc")))
-run_moderator(ir_all_st, yi ~ stat_type, "stat_type (kappa/gwet/icc)")
-
-im_all <- dat %>% filter(analytic_stratum == "inter-modality")
-im_all_res <- run_rve_cr2(im_all, "IM all metrics")
-add_row("IM all-metric RVE", im_all_res, im_all_res$k, im_all_res$n_clusters)
-
-
-# ============================================================
-# 9. EXPLORATORY: Small strata all-effects (kappa-only)
-# ============================================================
-
-cat("\n", paste(rep("=", 70), collapse = ""), "\n")
-cat("EXPLORATORY: Small strata all-effects (kappa-only)\n")
-cat(paste(rep("=", 70), collapse = ""), "\n")
-
-intra_all_k <- dat_kappa %>% filter(analytic_stratum == "intra-reader")
-intra_rve <- run_rve_cr2(intra_all_k, "Intra-reader kappa all-effects")
-
-iv_all_k <- dat_kappa %>% filter(analytic_stratum == "inter-version")
-iv_rve <- run_rve_cr2(iv_all_k, "Inter-version kappa all-effects")
-
-
-# ============================================================
-# 10. RVE vs OPES COMPARISON
-# ============================================================
-
-cat("\n", paste(rep("=", 70), collapse = ""), "\n")
-cat("RVE vs OPES COMPARISON (kappa-only)\n")
-cat(paste(rep("=", 70), collapse = ""), "\n")
-
-compare <- function(rve, opes, label) {
-  if (is.null(rve) || is.null(opes)) return()
-  diff <- (opes$pooled_kappa - rve$pooled_kappa) / rve$pooled_kappa * 100
-  overlap <- !(opes$ci_kappa[2] < rve$ci_kappa[1] | rve$ci_kappa[2] < opes$ci_kappa[1])
-  cat(sprintf("\n%s:\n  RVE: %.3f (%.3f, %.3f)\n  OPES: %.3f (%.3f, %.3f)\n  Diff: %+.1f%%, CI overlap: %s\n",
-              label,
-              rve$pooled_kappa, rve$ci_kappa[1], rve$ci_kappa[2],
-              opes$pooled_kappa, opes$ci_kappa[1], opes$ci_kappa[2],
-              diff, ifelse(overlap, "YES", "NO")))
-}
-
-compare(ir_res, ir_opes_res, "Inter-reader")
-compare(im_res, im_opes_res, "Inter-modality")
-
-
-# ============================================================
-# 11. SUMMARY TABLE
-# ============================================================
-
-cat("\n", paste(rep("=", 70), collapse = ""), "\n")
-cat("SUMMARY TABLE\n")
-cat(paste(rep("=", 70), collapse = ""), "\n")
-
-cat(sprintf("\n%-25s %5s %6s %8s %18s %18s\n",
-            "Analysis", "k", "clust", "est", "95% CI", "95% PI"))
-cat(paste(rep("-", 85), collapse = ""), "\n")
-
-for (r in summary_rows) {
-  cat(sprintf("%-25s %5d %6d %8.3f  [%.3f, %.3f]  [%.3f, %.3f]\n",
-              r$label, r$k, r$clust, r$kappa,
-              r$ci[1], r$ci[2], r$pi[1], r$pi[2]))
-}
-
-cat("\nDone.\n")
+# 1. n_categories (task difficulty â€” most important)×_6¶‰žËkºwµç@€€€€€€¹É½Ü¡¥É}­}Á½½°¤°ÍÕ´¡¥É}­}Á½½°‘¥Í}Á½½±•€ôô€Ä¤°4(€€€€€€€€€€€ÍÕ´¡¥É}­}Á½½°‘¥Í}Á½½±•€ôô€À¤¤¤4)ÉÕ¹}µ½‘•É…Ñ½È¡¥É}­}Á½½°°å¤ø¥Í}Á½½±•°€‰%H¸ÄÄÉ•…‘•É}ÍÑÉÕÑÕÉ”€¡Á½½±•ÙÌ½Ñ¡•È¤ˆ¤4(4(Œ€ÄÈ¸AÕ‰±¥…Ñ¥½¸å•…È€¡½¹Ñ¥¹Õ½ÕÌ¤4)¥É}­}åÈ€ð´¥É}¬€”ø”™¥±Ñ•È …¥Ì¹¹„¡ÁÕ‰}å•…È¤¤4)ÉÕ¹}µ½‘•É…Ñ½È¡¥É}­}åÈ°å¤øÁÕ‰}å•…È°€‰%H¸ÄÈÁÕ‰±¥…Ñ¥½¸å•…Èˆ¤4(4(Œ€ÄÌ¸EI0ÅÕ…±¥Ñä€¡1½ÜÙÌ5½‘•É…Ñ”½!¥ ¤4)¥É}­}É½ˆ€ð´¥É}¬€”ø”™¥±Ñ•È …¥Ì¹¹„¡¥Í}±½Ý}É½ˆ¤¤4)…Ð¡ÍÁÉ¥¹Ñ˜ ˆ€€€EI0ÅÕ…±¥Ñäè¬ô•€¡1½Üô•°5½‘•É…Ñ”½!¥ ô•¥q¸ˆ°4(€€€€€€€€€€€¹É½Ü¡¥É}­}É½ˆ¤°ÍÕ´¡¥É}­}É½ˆ‘¥Í}±½Ý}É½ˆ€ôô€Ä¤°4(€€€€€€€€€€€ÍÕ´¡¥É}­}É½ˆ‘¥Í}±½Ý}É½ˆ€ôô€À¤¤¤4)ÉÕ¹}µ½‘•É…Ñ½È¡¥É}­}É½ˆ°å¤ø¥Í}±½Ý}É½ˆ°€‰%H¸ÄÌEI0ÅÕ…±¥Ñä€¡1½ÜÙÌ5½½!¥ ¤ˆ¤4(4(Œ€ÄÍˆ¸EI0å•Ìµ½Õ¹Ð€¡½¹Ñ¥¹Õ½ÕÌ¤4)¥É}­}ÅÌ€ð´¥É}¬€”ø”™¥±Ñ•È …¥Ì¹¹„¡Å…É•±}Í½É”¤¤4)ÉÕ¹}µ½‘•É…Ñ½È¡¥É}­}ÅÌ°å¤øÅ…É•±}Í½É”°€‰%H¸ÄÍˆEI0å•Ìµ½Õ¹Ð€¡½¹Ñ¥¹Õ½ÕÌ¤ˆ¤4(4(Œ€ÄÐ¸MÑÕ‘ä‘•Í¥¸€¡ÁÉ½ÍÁ•Ñ¥Ù”ÙÌÉ•ÑÉ½ÍÁ•Ñ¥Ù”¤4)¥É}­}‘•Ì€ð´¥É}¬€”ø”™¥±Ñ•È …¥Ì¹¹„¡¥Í}ÁÉ½ÍÁ•Ñ¥Ù”¤¤4)…Ð¡ÍÁÉ¥¹Ñ˜ ˆ€€€%H‘•Í¥¸‘…Ñ„…Ù…¥±…‰±”è¬ô•€¡É•ÑÉ¼ô•°ÁÉ½ÍÀô•¥q¸ˆ°4(€€€€€€€€€€€¹É½Ü¡¥É}­}‘•Ì¤°ÍÕ´¡¥É}­}‘•Ì‘¥Í}ÁÉ½ÍÁ•Ñ¥Ù”€ôô€À¤°4(€€€€€€€€€€€ÍÕ´¡¥É}­}‘•Ì‘¥Í}ÁÉ½ÍÁ•Ñ¥Ù”€ôô€Ä¤¤¤4)ÉÕ¹}µ½‘•É…Ñ½È¡¥É}­}‘•Ì°å¤ø¥Í}ÁÉ½ÍÁ•Ñ¥Ù”°€‰%H¸ÄÐ‘•Í¥¸€¡ÁÉ½ÍÁ•Ñ¥Ù”ÙÌÉ•ÑÉ½ÍÁ•Ñ¥Ù”¤ˆ¤4(4(Œ€ÄÔ¸I•¥½¸€¡9½ÉÑ µ•É¥„€¼Í¥„€¼ÕÉ½Á”¤4)¥É}­}É•œ€ð´¥É}¬€”ø”4(€™¥±Ñ•È …¥Ì¹¹„¡É•¥½¹}…Ð¤¤€”ø”4(€µÕÑ…Ñ”¡É•¥½¹}…Ð€ô™…Ñ½È¡É•¥½¹}…Ð°±•Ù•±Ì€ôŒ ‰9½ÉÑ¡}µ•É¥„ˆ°€‰Í¥„ˆ°€‰ÕÉ½Á”ˆ¤¤¤4)…Ð¡ÍÁÉ¥¹Ñ˜ ˆ€€€%HÉ•¥½¸‘…Ñ„…Ù…¥±…‰±”è¬ô•€¡9ô•°Í¥„ô•°ÕÉ½Á”ô•¥q¸ˆ°4(€€€€€€€€€€€¹É½Ü¡¥É}­}É•œ¤°4(€€€€€€€€€€€ÍÕ´¡¥É}­}É•œ‘É•¥½¹}…Ð€ôô€‰9½ÉÑ¡}µ•É¥„ˆ¤°4(€€€€€€€€€€€ÍÕ´¡¥É}­}É•œ‘É•¥½¹}…Ð€ôô€‰Í¥„ˆ¤°4(€€€€€€€€€€€ÍÕ´¡¥É}­}É•œ‘É•¥½¹}…Ð€ôô€‰ÕÉ½Á”ˆ¤¤¤4)ÉÕ¹}µ½‘•É…Ñ½È¡¥É}­}É•œ°å¤øÉ•¥½¹}…Ð°€‰%H¸ÄÔÉ•¥½¸€¡9½Í¥„½ÕÉ½Á”¤ˆ¤4(4(Œ€´´´´€Ñ¸M9M%Q%Y%QdèÝ•¥¡Ð€Ìµ±•Ù•°€¡Ý•¥¡Ñ•½U\½Õ¹ÍÁ•¥™¥•¤€´´´´4)…Ð ‰q¸´´´M•¹Í¥Ñ¥Ù¥ÑäèÝ•¥¡Ñ}Í¡•µ”€Ìµ±•Ù•°€´´µq¸ˆ¤4)¥É}­}ÝÐÌ€ð´¥É}¬€”ø”4(€™¥±Ñ•È …¥Ì¹¹„¡ÝÑ|Í±•Ù•°¤¤€”ø”4(€µÕÑ…Ñ”¡ÝÐÌ€ô™…Ñ½È¡ÝÑ|Í±•Ù•°°±•Ù•±Ì€ôŒ ‰Õ¹Ý•¥¡Ñ•ˆ°€‰Ý•¥¡Ñ•ˆ°€‰Õ¹ÍÁ•¥™¥•ˆ¤¤¤4)ÉÕ¹}µ½‘•É…Ñ½È¡¥É}­}ÝÐÌ°å¤øÝÐÌ°€‰%H¹LÝ•¥¡Ñ}Í¡•µ”€Ìµ±•Ù•°ˆ¤4(4(Œ€´´´´€Ñ¸5U1Q%YI%	1€ Ìµ½‘•±Ì¤€´´´´4)…Ð ‰q¸´´´5Õ±Ñ¥Ù…É¥…‰±”µ•Ñ„µÉ•É•ÍÍ¥½¸€´´µq¸ˆ¤4(4(Œ5½‘•°€Å„è¹}…Ñ•½É¥•Ì€¬Ù•ÉÍ¥½¸ƒŠPPµ½¹±ä€¡AI%5Id°¹¼µ½‘…±¥Ñä½¹™½Õ¹¤4)¥É}­}µØÅ„€ð´¥É}¬€”ø”4(€™¥±Ñ•È¡ÍÑ‘}µ½‘…±¥Ñå|Ä€ôô€‰Pˆ°4(€€€€€€€€ÍÑ‘}Ù•ÉÍ¥½¹|Ä€•¥¸”Œ ‰½É¥¥¹…°ˆ°€‰ØÈÀÄäˆ¤°4(€€€€€€€€¹…Ñ}É½ÕÀ€•¥¸”Œ ˆÈ´Ìˆ°€ˆÐ´Ôˆ¤¤€”ø”4(€µÕÑ…Ñ”¡¥Í}™Õ±°€ô¥™•±Í”¡¹…Ñ}É½ÕÀ€ôô€ˆÐ´Ôˆ°€Ä°€À¤°4(€€€€€€€€¥Í}ØÈÀÄä€ô¥™•±Í”¡ÍÑ‘}Ù•ÉÍ¥½¹|Ä€ôô€‰ØÈÀÄäˆ°€Ä°€À¤¤4)ÉÕ¹}µ½‘•É…Ñ½È¡¥É}­}µØÅ„°å¤ø¥Í}™Õ±°€¬¥Í}ØÈÀÄä°4(€€€€€€€€€€€€€€‰%H¹5XÅ„Pµ½¹±äè¹…Ð€¬Ù•ÉÍ¥½¸ˆ¤4(4(Œ5½‘•°€Åˆè¹}…Ñ•½É¥•Ì€¬µ½‘…±¥Ñä€¬Ù•ÉÍ¥½¸ƒŠP…±°‘…Ñ„€¡aA1=IQ=Id¤4)¥É}­}µØÅˆ€ð´¥É}¬€”ø”4(€™¥±Ñ•È¡¹…Ñ}É½ÕÀ€•¥¸”Œ ˆÈ´Ìˆ°€ˆÐ´Ôˆ¤°4(€€€€€€€€µ½‘}É½ÕÀ€•¥¸”Œ ‰Pˆ°€‰5I$ˆ°€‰UM}ULˆ¤°4(€€€€€€€€€…¥Ì¹¹„¡Ù•É}É½ÕÀ¤¤€”ø”4(€µÕÑ…Ñ”¡¥Í}™Õ±°€ô¥™•±Í”¡¹…Ñ}É½ÕÀ€ôô€ˆÐ´Ôˆ°€Ä°€À¤°4(€€€€€€€€µ½‘…±¥Ñä€ô™…Ñ½È¡µ½‘}É½ÕÀ°±•Ù•±Ì€ôŒ ‰Pˆ°€‰5I$ˆ°€‰UM}ULˆ¤¤°4(€€€€€€€€¥Í}ØÈÀÄä€ô¥™•±Í”¡Ù•É}É½ÕÀ€ôô€‰ØÈÀÄäˆ°€Ä°€À¤¤4)ÉÕ¹}µ½‘•É…Ñ½È¡¥É}­}µØÅˆ°å¤ø¥Í}™Õ±°€¬µ½‘…±¥Ñä€¬¥Í}ØÈÀÄä°4(€€€€€€€€€€€€€€‰%H¹5XÅˆ…±°µµ½è¹…Ð€¬µ½‘…±¥Ñä€¬Ù•ÉÍ¥½¸€¡aA1=IQ=Id¤ˆ¤4(4(Œ5½‘•°€Èè¹}…Ñ•½É¥•Ì€¬Ý•¥¡Ñ}Í¡•µ”€¡µ•Ñ¡½‘½±½¥…°¤4)¥É}­}µØÈ€ð´¥É}¬€”ø”4(€™¥±Ñ•È¡¹…Ñ}É½ÕÀ€•¥¸”Œ ˆÈ´Ìˆ°€ˆÐ´Ôˆ¤°4(€€€€€€€€ÝÑ}É½ÕÀ€•¥¸”Œ ‰Ý•¥¡Ñ•ˆ°€‰Õ¹Ý•¥¡Ñ•ˆ¤¤€”ø”4(€µÕÑ…Ñ”¡¥Í}™Õ±°€ô¥™•±Í”¡¹…Ñ}É½ÕÀ€ôô€ˆÐ´Ôˆ°€Ä°€À¤°4(€€€€€€€€¥Í}Ý•¥¡Ñ•€ô¥™•±Í”¡ÝÑ}É½ÕÀ€ôô€‰Ý•¥¡Ñ•ˆ°€Ä°€À¤¤4)ÉÕ¹}µ½‘•É…Ñ½È¡¥É}­}µØÈ°å¤ø¥Í}™Õ±°€¬¥Í}Ý•¥¡Ñ•°4(€€€€€€€€€€€€€€‰%H¹5XÈ¹…Ð€¬Ý•¥¡Ñ}Í¡•µ”ˆ¤4(4(Œ5½‘•°€Ìè•áÁ•É¥•¹”€¬¹}…Ñ•½É¥•Ì€¡±¥¹¥…°€¬Ñ…Í¬‘¥™™¥Õ±Ñä¤4)¥É}­}µØÌ€ð´¥É}¬€”ø”4(€™¥±Ñ•È …¥Ì¹¹„¡•áÁ}µ•…¸¤°¹…Ñ}É½ÕÀ€•¥¸”Œ ˆÈ´Ìˆ°€ˆÐ´Ôˆ¤¤€”ø”4(€µÕÑ…Ñ”¡¥Í}™Õ±°€ô¥™•±Í”¡¹…Ñ}É½ÕÀ€ôô€ˆÐ´Ôˆ°€Ä°€À¤¤4)…Ð¡ÍÁÉ¥¹Ñ˜ ˆ€€€5XÌ•áÁ•É¥•¹”€¬¹…Ðè¬ô•‘q¸ˆ°¹É½Ü¡¥É}­}µØÌ¤¤¤4)ÉÕ¹}µ½‘•É…Ñ½È¡¥É}­}µØÌ°å¤ø•áÁ}µ•…¸€¬¥Í}™Õ±°°4(€€€€€€€€€€€€€€‰%H¹5XÌ•áÁ•É¥•¹”€¬¹…Ðˆ¤4(4(4(Œ€ôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôô4(Œ€Ñ¸5QµIIMM%=8è%¹Ñ•Èµµ½‘…±¥Ñä­…ÁÁ„µ½¹±ä4(Œ€ôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôô4(4)…Ð ‰q¸ˆ°Á…ÍÑ”¡É•À ˆôˆ°€ÜÀ¤°½±±…ÁÍ”€ô€ˆˆ¤°€‰q¸ˆ¤4)…Ð ‰5QµIIMM%=8è%¹Ñ•Èµµ½‘…±¥Ñä­…ÁÁ„µ½¹±åq¸ˆ¤4)…Ð¡Á…ÍÑ”¡É•À ˆôˆ°€ÜÀ¤°½±±…ÁÍ”€ô€ˆˆ¤°€‰q¸ˆ¤4(4)…Ð ‰q¸´´´U¹¥Ù…É¥…‰±”€´´µq¸ˆ¤4(4(Œ€Ä¸¹}…Ñ•½É¥•Ì4)¥µ}­}¹Œ€ð´¥µ}¬€”ø”4(€™¥±Ñ•È¡¹…Ñ}É½ÕÀ€•¥¸”Œ ˆÈ´Ìˆ°€ˆÐ´Ôˆ¤¤€”ø”4(€µÕÑ…Ñ”¡¥Í}™Õ±°€ô¥™•±Í”¡¹…Ñ}É½ÕÀ€ôô€ˆÐ´Ôˆ°€Ä°€À¤¤4)ÉÕ¹}µ½‘•É…Ñ½È¡¥µ}­}¹Œ°å¤ø¥Í}™Õ±°°€‰%4¸Ä¹}…Ñ•½É¥•Ì€ Ð´ÔÙÌ€È´Ì¤ˆ¤4(4(Œ9=QèÙ•ÉÍ¥½¸µ½‘•É…Ñ½ÈI5=Y™½È¥¹Ñ•Èµµ½‘…±¥Ñä¸4(Œ=É¥¥¹…°	½Í¹¥…¬€ôPµ½¹±äìØÈÀÄä€ôP­5I$¸%¸%4½µÁ…É¥Í½¹Ì°4(Œ€‰Ù•ÉÍ¥½¸ˆ¥Ì¥¹Í•Á…É…‰±”™É½´±…ÍÍ¥™¥…Ñ¥½¸Í½Á”€¡Ý¡¥ µ½‘…±¥Ñ¥•Ì4(ŒÑ¡”Í¡•µ„Ý…Ì‘•Í¥¹•Ñ¼½Ù•È¤¸PµUL½µÁ…É¥Í½¹Ì™ÕÉÑ¡•È4(Œ½µÁ±¥…Ñ”¥¹Ñ•ÉÁÉ•Ñ…Ñ¥½¸Í¥¹”¹•¥Ñ¡•ÈÙ•ÉÍ¥½¸½Ù•ÉÌUL¸4(4(Œ€È¸µ½‘…±¥ÑäÁ…¥È€¡Q}5I$ÙÌQ}ULÙÌ½Ñ¡•È¤4)¥µ}­}µÀ€ð´¥µ}¬€”ø”4(€™¥±Ñ•È¡µ½‘}Á…¥È€•¥¸”Œ ‰Q}5I$ˆ°€‰Q}ULˆ°€‰½Ñ¡•Èˆ¤¤€”ø”4(€µÕÑ…Ñ”¡Á…¥È€ô™…Ñ½È¡µ½‘}Á…¥È°±•Ù•±Ì€ôŒ ‰Q}5I$ˆ°€‰Q}ULˆ°€‰½Ñ¡•Èˆ¤¤¤4)ÉÕ¹}µ½‘•É…Ñ½È¡¥µ}­}µÀ°å¤øÁ…¥È°€‰%4¸Èµ½‘…±¥Ñå}Á…¥È€¡Pµ5I$½PµUL½½Ñ¡•È¤ˆ¤4(4(Œ€Ì¸±½œ¡¹}åÍÑÌ¤4)¥µ}­}±¹Œ€ð´¥µ}¬€”ø”™¥±Ñ•È …¥Ì¹¹„¡±½}¹Œ¤¤4)ÉÕ¹}µ½‘•É…Ñ½È¡¥µ}­}±¹Œ°å¤ø±½}¹Œ°€‰%4¸Ì±½œ¡¹}åÍÑÌ¤ˆ¤4(4(Œ€Ð¸ÁÕ‰±¥…Ñ¥½¸ÑåÁ”4)¥µ}­}ÁÕˆ€ð´¥µ}¬€”ø”(€™¥±Ñ•È …¥Ì¹¹„¡ÁÕ‰}ÑåÁ”¤¤€”ø”(€µÕÑ…Ñ”¡¥Í}…‰ÍÑÉ…Ð€ô¥™•±Í”¡ÁÕ‰}ÑåÁ”€ôô€‰…‰ÍÑÉ…Ðˆ°€Ä°€À¤¤)ÉÕ¹}µ½‘•É…Ñ½È¡¥µ}­}ÁÕˆ°å¤ø¥Í}…‰ÍÑÉ…Ð°€‰%4¸ÐÁÕ‰}ÑåÁ”€¡…‰ÍÑÉ…ÐÙÌ™Õ±±Ñ•áÐ¤ˆ¤)…Ð ˆ€€€%¹Ñ•ÉÁÉ•Ñ…Ñ¥½¸è¹½Ð¥¹Ñ•ÉÁÉ•Ñ…‰±”‰•…ÕÍ”Ñ¡”…‰ÍÑÉ…Ð±•Ù•°½¹Ñ…¥¹Ì½¹±ä½¹”ÍÑÕ‘ä…¹½¹”‘•Á•¹‘•¹ä±ÕÍÑ•È¹q¸ˆ¤(4(Œ€Ô¸I•…‘•È•áÁ•É¥•¹”€¡½¹Ñ¥¹Õ½ÕÌ¤4)¥µ}­}•áÀ€ð´¥µ}¬€”ø”™¥±Ñ•È …¥Ì¹¹„¡•áÁ}µ•…¸¤¤4)…Ð¡ÍÁÉ¥¹Ñ˜ ˆ€€€%4•áÁ•É¥•¹”‘…Ñ„…Ù…¥±…‰±”è¬ô•¼•‘q¸ˆ°¹É½Ü¡¥µ}­}•áÀ¤°¹É½Ü¡¥µ}¬¤¤¤4)ÉÕ¹}µ½‘•É…Ñ½È¡¥µ}­}•áÀ°å¤ø•áÁ}µ•…¸°€‰%4¸Ô•áÁ•É¥•¹”€¡½¹Ñ¥¹Õ½ÕÌ¤ˆ¤4(4(Œ€Ø¸MÁ•¥…±Ñä€¡ÍÕ‰ÍÁ•¥…±ÑäÙÌ½Ñ¡•È¤4)¥µ}­}ÍÁ•Œ€ð´¥µ}¬€”ø”4(€™¥±Ñ•È …¥Ì¹¹„¡ÍÁ•}É½ÕÀ¤¤€”ø”4(€µÕÑ…Ñ”¡¥Í}ÍÕˆ€ô¥™•±Í”¡ÍÁ•}É½ÕÀ€ôô€‰ÍÕ‰ÍÁ•¥…±Ñäˆ°€Ä°€À¤¤4)ÉÕ¹}µ½‘•É…Ñ½È¡¥µ}­}ÍÁ•Œ°å¤ø¥Í}ÍÕˆ°€‰%4¸ØÍÁ•¥…±Ñä€¡ÍÕ‰ÍÁ•¥…±ÑäÙÌ½Ñ¡•È¤ˆ¤4(4(Œ€Ü¸	±¥¹‘¥¹œ€¡‰±¥¹‘•ÙÌ½Ñ¡•È¤4)¥µ}­}‰±¥¹€ð´¥µ}¬€”ø”™¥±Ñ•È …¥Ì¹¹„¡¥Í}‰±¥¹‘•¤¤4)ÉÕ¹}µ½‘•É…Ñ½È¡¥µ}­}‰±¥¹°å¤ø¥Í}‰±¥¹‘•°€‰%4¸Ü‰±¥¹‘¥¹œ€¡‰±¥¹‘•ÙÌ½Ñ¡•È¤ˆ¤4(4(Œ€à¸AÕ‰±¥…Ñ¥½¸å•…È€¡½¹Ñ¥¹Õ½ÕÌ¤4)¥µ}­}åÈ€ð´¥µ}¬€”ø”™¥±Ñ•È …¥Ì¹¹„¡ÁÕ‰}å•…È¤¤4)ÉÕ¹}µ½‘•É…Ñ½È¡¥µ}­}åÈ°å¤øÁÕ‰}å•…È°€‰%4¸àÁÕ‰±¥…Ñ¥½¸å•…Èˆ¤4(4(Œ€ä¸]•¥¡ÐÍ¡•µ”€¡Ý•¥¡Ñ•ÙÌÕ¹Ý•¥¡Ñ•¤4)¥µ}­}ÝÐ€ð´¥µ}¬€”ø”4(€™¥±Ñ•È¡ÝÑ}É½ÕÀ€•¥¸”Œ ‰Ý•¥¡Ñ•ˆ°€‰Õ¹Ý•¥¡Ñ•ˆ¤¤€”ø”4(€µÕÑ…Ñ”¡¥Í}Ý•¥¡Ñ•€ô¥™•±Í”¡ÝÑ}É½ÕÀ€ôô€‰Ý•¥¡Ñ•ˆ°€Ä°€À¤¤4)ÉÕ¹}µ½‘•É…Ñ½È¡¥µ}­}ÝÐ°å¤ø¥Í}Ý•¥¡Ñ•°€‰%4¸äÝ•¥¡Ñ}Í¡•µ”€¡Ý•¥¡Ñ•ÙÌU\¤ˆ¤4(4(Œ€ÄÀ¸¹}É•…‘•ÉÌ€ ÈÙÌ€Ì¬ƒŠP™½È%4Ñ¡¥Ìµ…äÙ…ÉäÝ¥Ñ €ÄµÉ•…‘•È‘•Í¥¹Ì¤4)¥µ}­}¹È€ð´¥µ}¬€”ø”4(€™¥±Ñ•È …¥Ì¹¹„¡¹}É•…‘•ÉÌ¤¤€”ø”4(€µÕÑ…Ñ”¡¹É}…Ð€ô…Í•}Ý¡•¸ 4(€€€¹}É•…‘•ÉÌ€ôô€Äø€ˆÄˆ°4(€€€¹}É•…‘•ÉÌ€ôô€Èø€ˆÈˆ°4(€€€¹}É•…‘•ÉÌ€øô€Ìø€ˆÍÁ±ÕÌˆ°4(€€€QIUø9}¡…É…Ñ•É|4(€€¤¤€”ø”4(€™¥±Ñ•È …¥Ì¹¹„¡¹É}…Ð¤¤4)¥˜€¡±•¹Ñ ¡Õ¹¥ÅÕ”¡¥µ}­}¹È‘¹É}…Ð¤¤€øô€È¤ì4(€¥µ}­}¹È‘¹É}…Ð€ð´™…Ñ½È¡¥µ}­}¹È‘¹É}…Ð°±•Ù•±Ì€ôŒ ˆÄˆ°€ˆÈˆ°€ˆÍÁ±ÕÌˆ¤¤4(€ÉÕ¹}µ½‘•É…Ñ½È¡¥µ}­}¹È°å¤ø¹É}…Ð°€‰%4¸ÄÀ¹}É•…‘•ÉÌ€ Ä¼È¼Ì¬¤ˆ¤4)ô4(4(Œ€ÄÄ¸EI0ÅÕ…±¥Ñä€¡1½ÜÙÌ5½‘•É…Ñ”½!¥ ¤4)¥µ}­}É½ˆ€ð´¥µ}¬€”ø”™¥±Ñ•È …¥Ì¹¹„¡¥Í}±½Ý}É½ˆ¤¤4)…Ð¡ÍÁÉ¥¹Ñ˜ ˆ€€€%4EI0ÅÕ…±¥Ñäè¬ô•€¡1½Üô•°5½‘•É…Ñ”½!¥ ô•¥q¸ˆ°4(€€€€€€€€€€€¹É½Ü¡¥µ}­}É½ˆ¤°ÍÕ´¡¥µ}­}É½ˆ‘¥Í}±½Ý}É½ˆ€ôô€Ä¤°4(€€€€€€€€€€€ÍÕ´¡¥µ}­}É½ˆ‘¥Í}±½Ý}É½ˆ€ôô€À¤¤¤4)ÉÕ¹}µ½‘•É…Ñ½È¡¥µ}­}É½ˆ°å¤ø¥Í}±½Ý}É½ˆ°€‰%4¸ÄÄEI0ÅÕ…±¥Ñä€¡1½ÜÙÌ5½½!¥ ¤ˆ¤4(4(Œ€ÄÅˆ¸EI0å•Ìµ½Õ¹Ð€¡½¹Ñ¥¹Õ½ÕÌ¤4)¥µ}­}ÅÌ€ð´¥µ}¬€”ø”™¥±Ñ•È …¥Ì¹¹„¡Å…É•±}Í½É”¤¤4)ÉÕ¹}µ½‘•É…Ñ½È¡¥µ}­}ÅÌ°å¤øÅ…É•±}Í½É”°€‰%4¸ÄÅˆEI0å•Ìµ½Õ¹Ð€¡½¹Ñ¥¹Õ½ÕÌ¤ˆ¤4(4(Œ€ÄÈ¸MÑÕ‘ä‘•Í¥¸€¡ÁÉ½ÍÁ•Ñ¥Ù”ÙÌÉ•ÑÉ½ÍÁ•Ñ¥Ù”¤4)¥µ}­}‘•Ì€ð´¥µ}¬€”ø”™¥±Ñ•È …¥Ì¹¹„¡¥Í}ÁÉ½ÍÁ•Ñ¥Ù”¤¤4)…Ð¡ÍÁÉ¥¹Ñ˜ ˆ€€€%4‘•Í¥¸‘…Ñ„…Ù…¥±…‰±”è¬ô•€¡É•ÑÉ¼ô•°ÁÉ½ÍÀô•¥q¸ˆ°4(€€€€€€€€€€€¹É½Ü¡¥µ}­}‘•Ì¤°ÍÕ´¡¥µ}­}‘•Ì‘¥Í}ÁÉ½ÍÁ•Ñ¥Ù”€ôô€À¤°4(€€€€€€€€€€€ÍÕ´¡¥µ}­}‘•Ì‘¥Í}ÁÉ½ÍÁ•Ñ¥Ù”€ôô€Ä¤¤¤4)ÉÕ¹}µ½‘•É…Ñ½È¡¥µ}­}‘•Ì°å¤ø¥Í}ÁÉ½ÍÁ•Ñ¥Ù”°€‰%4¸ÄÈ‘•Í¥¸€¡ÁÉ½ÍÁ•Ñ¥Ù”ÙÌÉ•ÑÉ½ÍÁ•Ñ¥Ù”¤ˆ¤4(4(Œ€ÄÌ¸I•¥½¸€¡9½ÉÑ µ•É¥„€¼Í¥„€¼ÕÉ½Á”¤4)¥µ}­}É•œ€ð´¥µ}¬€”ø”4(€™¥±Ñ•È …¥Ì¹¹„¡É•¥½¹}…Ð¤¤€”ø”4(€µÕÑ…Ñ”¡É•¥½¹}…Ð€ô™…Ñ½È¡É•¥½¹}…Ð°±•Ù•±Ì€ôŒ ‰9½ÉÑ¡}µ•É¥„ˆ°€‰Í¥„ˆ°€‰ÕÉ½Á”ˆ¤¤¤4)…Ð¡ÍÁÉ¥¹Ñ˜ ˆ€€€%4É•¥½¸‘…Ñ„…Ù…¥±…‰±”è¬ô•€¡9ô•°Í¥„ô•°ÕÉ½Á”ô•¥q¸ˆ°4(€€€€€€€€€€€¹É½Ü¡¥µ}­}É•œ¤°4(€€€€€€€€€€€ÍÕ´¡¥µ}­}É•œ‘É•¥½¹}…Ð€ôô€‰9½ÉÑ¡}µ•É¥„ˆ¤°4(€€€€€€€€€€€ÍÕ´¡¥µ}­}É•œ‘É•¥½¹}…Ð€ôô€‰Í¥„ˆ¤°4(€€€€€€€€€€€ÍÕ´¡¥µ}­}É•œ‘É•¥½¹}…Ð€ôô€‰ÕÉ½Á”ˆ¤¤¤4)ÉÕ¹}µ½‘•É…Ñ½È¡¥µ}­}É•œ°å¤øÉ•¥½¹}…Ð°€‰%4¸ÄÌÉ•¥½¸€¡9½Í¥„½ÕÉ½Á”¤ˆ¤4(4(4(Œ€ôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôô4(Œ€Ô¸M9M%Q%Y%Qd€Äè]•¥¡Ñ•­…ÁÁ„½¹±ä€ ¬Pµ‘•É¥Ù•1\¤4(Œ€ôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôô4(4)…Ð ‰q¸ˆ°Á…ÍÑ”¡É•À ˆôˆ°€ÜÀ¤°½±±…ÁÍ”€ô€ˆˆ¤°€‰q¸ˆ¤4)…Ð ‰M9M%Q%Y%Qd€Äè]•¥¡Ñ•­…ÁÁ„½¹±ä€ ¬Pµ‘•É¥Ù•1\¥q¸ˆ¤4)…Ð¡Á…ÍÑ”¡É•À ˆôˆ°€ÜÀ¤°½±±…ÁÍ”€ô€ˆˆ¤°€‰q¸ˆ¤4(4(ŒAÉ•Á…É”Pµ‘•É¥Ù•1\‘…Ñ…Í•ÐÑ¡É½Õ Ñ¡”Í…µ”Á¥Á•±¥¹”…ÌÁÉ¥µ…Éä4)‘…Ñ}…Ñ}±Ü€ð´½µÀ€”ø”4(€™¥±Ñ•È¡•á±Õ‘”€ôô€‰…Ñ}‘•É¥Ù•‘}±Ý}Í•¹Í¥Ñ¥Ù¥Ñäˆ¤€”ø”4(€±•™Ñ}©½¥¸¡ÍÑÕ€”ø”Í•±•Ð¡ÍÑÕ‘å}¥°å•…È°ÁÕ‰±¥…Ñ¥½¹}ÑåÁ”°ÍÑÕ‘å}‘•Í¥¸¤°4(€€€€€€€€€€€‰ä€ô€‰ÍÑÕ‘å}¥ˆ¤€”ø”4(€±•™Ñ}©½¥¸¡Å…É•°€”ø”Í•±•Ð¡ÍÑÕ‘å}¥°½Ù•É…±±}É½ˆ°Å…É•±}å•Í}½Õ¹Ð¤°4(€€€€€€€€€€€‰ä€ô€‰ÍÑÕ‘å}¥ˆ¤€”ø”4(€µÕÑ…Ñ” 4(€€€­…ÁÁ„€ô…Ì¹¹Õµ•É¥Œ¡­…ÁÁ„¤°4(€€€¹Œ€ô…Ì¹¹Õµ•É¥Œ¡¹}åÍÑÌ¤°4(€€€ÍÑ…Ñ}ÑåÁ”€ô€‰­…ÁÁ„ˆ°4(€€€ÍÑ…Ð€ô­…ÁÁ„°4(€€€ÍÑ…Ñ}±…µÁ•€ôÁµ¥¸¡Áµ…à¡ÍÑ…Ð°€´À¸ääÔ¤°€À¸ääÔ¤°4(€€€å¤€ô…Ñ…¹ ¡ÍÑ…Ñ}±…µÁ•¤°4(€€€Ù¥}¸€ô¥™•±Í” …¥Ì¹¹„¡¹Œ¤€˜¹Œ€ø€Ì°€Ä€¼€¡¹Œ€´€Ì¤°9}É•…±|¤°4(€€€Ù¤€ôÙ¥}¸°4(€€€ÝÑ}É½ÕÀ€ô€‰Ý•¥¡Ñ•ˆ4(€€¤€”ø”4(€™¥±Ñ•È …¥Ì¹¹„¡å¤¤€˜€…¥Ì¹¹„¡Ù¤¤€˜Ù¤€ø€À¤4)…Ð¡ÍÁÉ¥¹Ñ˜ ‰Pµ‘•É¥Ù•1\É½ÝÌ±½…‘•è€•‘q¸ˆ°¹É½Ü¡‘…Ñ}…Ñ}±Ü¤¤¤4(4)…Ñ}±Ý}¥È€ð´‘…Ñ}…Ñ}±Ü€”ø”™¥±Ñ•È¡…¹…±åÑ¥}ÍÑÉ…ÑÕ´€ôô€‰¥¹Ñ•ÈµÉ•…‘•Èˆ¤4)…Ñ}±Ý}¥´€ð´‘…Ñ}…Ñ}±Ü€”ø”™¥±Ñ•È¡…¹…±åÑ¥}ÍÑÉ…ÑÕ´€ôô€‰¥¹Ñ•Èµµ½‘…±¥Ñäˆ¤4(4(Œ]•¥¡Ñ•Í•¹Í¥Ñ¥Ù¥Ñäè…ÕÑ¡½ÈµÉ•Á½ÉÑ•Ý•¥¡Ñ•€¬Pµ‘•É¥Ù•1\4)¥É}Ý¬€ð´‰¥¹‘}É½ÝÌ 4(€¥É}¬€”ø”™¥±Ñ•È¡ÝÑ}É½ÕÀ€ôô€‰Ý•¥¡Ñ•ˆ¤°4(€…Ñ}±Ý}¥È4(¤4)¥É}Ý­}É•Ì€ð´ÉÕ¹}ÉÙ•}ÈÈ¡¥É}Ý¬°€‰%HÝ•¥¡Ñ•­…ÁÁ„€ ­Pµ‘•É¥Ù•1\¤ˆ¤4)…‘‘}É½Ü ‰%HÝ•¥¡Ñ•IYˆ°¥É}Ý­}É•Ì°¥É}Ý­}É•Ì‘¬°¥É}Ý­}É•Ì‘¹}±ÕÍÑ•ÉÌ¤4(4)¥µ}Ý¬€ð´‰¥¹‘}É½ÝÌ 4(€¥µ}¬€”ø”™¥±Ñ•È¡ÝÑ}É½ÕÀ€ôô€‰Ý•¥¡Ñ•ˆ¤°4(€…Ñ}±Ý}¥´4(¤4)¥µ}Ý­}É•Ì€ð´ÉÕ¹}ÉÙ•}ÈÈ¡¥µ}Ý¬°€‰%4Ý•¥¡Ñ•­…ÁÁ„€ ­Pµ‘•É¥Ù•1\¤ˆ¤4(4(4(Œ€ôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôô4(Œ€Ø¸M9M%Q%Y%Qd€ÈèU¹Ý•¥¡Ñ•­…ÁÁ„½¹±ä4(Œ€ôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôô4(4)…Ð ‰q¸ˆ°Á…ÍÑ”¡É•À ˆôˆ°€ÜÀ¤°½±±…ÁÍ”€ô€ˆˆ¤°€‰q¸ˆ¤4)…Ð ‰M9M%Q%Y%Qd€ÈèU¹Ý•¥¡Ñ•­…ÁÁ„½¹±åq¸ˆ¤4)…Ð¡Á…ÍÑ”¡É•À ˆôˆ°€ÜÀ¤°½±±…ÁÍ”€ô€ˆˆ¤°€‰q¸ˆ¤4(4)¥É}Õ¬€ð´¥É}¬€”ø”™¥±Ñ•È¡ÝÑ}É½ÕÀ€ôô€‰Õ¹Ý•¥¡Ñ•ˆ¤4)¥É}Õ­}É•Ì€ð´ÉÕ¹}ÉÙ•}ÈÈ¡¥É}Õ¬°€‰%HÕ¹Ý•¥¡Ñ•­…ÁÁ„ˆ¤4)…‘‘}É½Ü ‰%HÕ¹Ý•¥¡Ñ•IYˆ°¥É}Õ­}É•Ì°¥É}Õ­}É•Ì‘¬°¥É}Õ­}É•Ì‘¹}±ÕÍÑ•ÉÌ¤4(4)¥µ}Õ¬€ð´¥µ}¬€”ø”™¥±Ñ•È¡ÝÑ}É½ÕÀ€ôô€‰Õ¹Ý•¥¡Ñ•ˆ¤4)¥µ}Õ­}É•Ì€ð´ÉÕ¹}ÉÙ•}ÈÈ¡¥µ}Õ¬°€‰%4Õ¹Ý•¥¡Ñ•­…ÁÁ„ˆ¤4)…‘‘}É½Ü ‰%4Õ¹Ý•¥¡Ñ•IYˆ°¥µ}Õ­}É•Ì°¥µ}Õ­}É•Ì‘¬°¥µ}Õ­}É•Ì‘¹}±ÕÍÑ•ÉÌ¤4(4(4(Œ€ôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôô4(Œ€Ü¸M9M%Q%Y%Qd€Ìè€Ôµ…Ñ•½Éä­…ÁÁ„½¹±ä4(Œ€ôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôô4(4)…Ð ‰q¸ˆ°Á…ÍÑ”¡É•À ˆôˆ°€ÜÀ¤°½±±…ÁÍ”€ô€ˆˆ¤°€‰q¸ˆ¤4)…Ð ‰M9M%Q%Y%Qd€Ìè€Ôµ…Ñ•½Éä­…ÁÁ„½¹±åq¸ˆ¤4)…Ð¡Á…ÍÑ”¡É•À ˆôˆ°€ÜÀ¤°½±±…ÁÍ”€ô€ˆˆ¤°€‰q¸ˆ¤4(4)¥É|ÕŒ€ð´¥É}¬€”ø”™¥±Ñ•È¡¹}…Ñ•½É¥•Ì€ôô€Ô¤4)¥É|Õ}É•Ì€ð´ÉÕ¹}ÉÙ•}ÈÈ¡¥É|ÕŒ°€‰%H€Ôµ…Ð­…ÁÁ„ˆ¤4)…‘‘}É½Ü ‰%H€Ôµ…ÐIYˆ°¥É|Õ}É•Ì°¥É|Õ}É•Ì‘¬°¥É|Õ}É•Ì‘¹}±ÕÍÑ•ÉÌ¤4(4)¥µ|ÕŒ€ð´¥µ}¬€”ø”™¥±Ñ•È¡¹}…Ñ•½É¥•Ì€ôô€Ô¤4)¥µ|Õ}É•Ì€ð´ÉÕ¹}ÉÙ•}ÈÈ¡¥µ|ÕŒ°€‰%4€Ôµ…Ð­…ÁÁ„ˆ¤4)…‘‘}É½Ü ‰%4€Ôµ…ÐIYˆ°¥µ|Õ}É•Ì°¥µ|Õ}É•Ì‘¬°¥µ|Õ}É•Ì‘¹}±ÕÍÑ•ÉÌ¤4(4(4(Œ€ôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôô4(Œ€à¸aA1=IQ=Idè±°µ•ÑÉ¥ÌÁ½½±•4(Œ€ôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôô4(4)…Ð ‰q¸ˆ°Á…ÍÑ”¡É•À ˆôˆ°€ÜÀ¤°½±±…ÁÍ”€ô€ˆˆ¤°€‰q¸ˆ¤4)…Ð ‰aA1=IQ=Idè±°µ•ÑÉ¥ÌÁ½½±•€¡­…ÁÁ„€¬Ý•Ð€¬%¥q¸ˆ¤4)…Ð¡Á…ÍÑ”¡É•À ˆôˆ°€ÜÀ¤°½±±…ÁÍ”€ô€ˆˆ¤°€‰q¸ˆ¤4(4)¥É}…±°€ð´‘…Ð€”ø”™¥±Ñ•È¡…¹…±åÑ¥}ÍÑÉ…ÑÕ´€ôô€‰¥¹Ñ•ÈµÉ•…‘•Èˆ¤4)¥É}…±±}É•Ì€ð´ÉÕ¹}ÉÙ•}ÈÈ¡¥É}…±°°€‰%H…±°µ•ÑÉ¥Ìˆ¤4)…‘‘}É½Ü ‰%H…±°µµ•ÑÉ¥ŒIYˆ°¥É}…±±}É•Ì°¥É}…±±}É•Ì‘¬°¥É}…±±}É•Ì‘¹}±ÕÍÑ•ÉÌ¤4(4(ŒÍÑ…Ñ}ÑåÁ”µ½‘•É…Ñ½È4)¥É}…±±}ÍÐ€ð´¥É}…±°€”ø”4(€µÕÑ…Ñ”¡ÍÑ…Ñ}ÑåÁ”€ô™…Ñ½È¡ÍÑ…Ñ}ÑåÁ”°±•Ù•±Ì€ôŒ ‰­…ÁÁ„ˆ°€‰Ý•Ðˆ°€‰¥Œˆ¤¤¤4)ÉÕ¹}µ½‘•É…Ñ½È¡¥É}…±±}ÍÐ°å¤øÍÑ…Ñ}ÑåÁ”°€‰ÍÑ…Ñ}ÑåÁ”€¡­…ÁÁ„½Ý•Ð½¥Œ¤ˆ¤4(4)¥µ}…±°€ð´‘…Ð€”ø”™¥±Ñ•È¡…¹…±åÑ¥}ÍÑÉ…ÑÕ´€ôô€‰¥¹Ñ•Èµµ½‘…±¥Ñäˆ¤4)¥µ}…±±}É•Ì€ð´ÉÕ¹}ÉÙ•}ÈÈ¡¥µ}…±°°€‰%4…±°µ•ÑÉ¥Ìˆ¤4)…‘‘}É½Ü ‰%4…±°µµ•ÑÉ¥ŒIYˆ°¥µ}…±±}É•Ì°¥µ}…±±}É•Ì‘¬°¥µ}…±±}É•Ì‘¹}±ÕÍÑ•ÉÌ¤4(4(4(Œ€ôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôô4(Œ€ä¸aA1=IQ=IdèMµ…±°ÍÑÉ…Ñ„…±°µ•™™•ÑÌ€¡­…ÁÁ„µ½¹±ä¤4(Œ€ôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôô4(4)…Ð ‰q¸ˆ°Á…ÍÑ”¡É•À ˆôˆ°€ÜÀ¤°½±±…ÁÍ”€ô€ˆˆ¤°€‰q¸ˆ¤4)…Ð ‰aA1=IQ=IdèMµ…±°ÍÑÉ…Ñ„…±°µ•™™•ÑÌ€¡­…ÁÁ„µ½¹±ä¥q¸ˆ¤4)…Ð¡Á…ÍÑ”¡É•À ˆôˆ°€ÜÀ¤°½±±…ÁÍ”€ô€ˆˆ¤°€‰q¸ˆ¤4(4)¥¹ÑÉ…}…±±}¬€ð´‘…Ñ}­…ÁÁ„€”ø”™¥±Ñ•È¡…¹…±åÑ¥}ÍÑÉ…ÑÕ´€ôô€‰¥¹ÑÉ„µÉ•…‘•Èˆ¤4)¥¹ÑÉ…}ÉÙ”€ð´ÉÕ¹}ÉÙ•}ÈÈ¡¥¹ÑÉ…}…±±}¬°€‰%¹ÑÉ„µÉ•…‘•È­…ÁÁ„…±°µ•™™•ÑÌˆ¤4(4)¥Ù}…±±}¬€ð´‘…Ñ}­…ÁÁ„€”ø”™¥±Ñ•È¡…¹…±åÑ¥}ÍÑÉ…ÑÕ´€ôô€‰¥¹Ñ•ÈµÙ•ÉÍ¥½¸ˆ¤4)¥Ù}ÉÙ”€ð´ÉÕ¹}ÉÙ•}ÈÈ¡¥Ù}…±±}¬°€‰%¹Ñ•ÈµÙ•ÉÍ¥½¸­…ÁÁ„…±°µ•™™•ÑÌˆ¤4(4(4(Œ€ôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôô4(Œ€ÄÀ¸IYÙÌ=AL=5AI%M=84(Œ€ôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôô4(4)…Ð ‰q¸ˆ°Á…ÍÑ”¡É•À ˆôˆ°€ÜÀ¤°½±±…ÁÍ”€ô€ˆˆ¤°€‰q¸ˆ¤4)…Ð ‰IYÙÌ=AL=5AI%M=8€¡­…ÁÁ„µ½¹±ä¥q¸ˆ¤4)…Ð¡Á…ÍÑ”¡É•À ˆôˆ°€ÜÀ¤°½±±…ÁÍ”€ô€ˆˆ¤°€‰q¸ˆ¤4(4)½µÁ…É”€ð´™Õ¹Ñ¥½¸¡ÉÙ”°½Á•Ì°±…‰•°¤ì4(€¥˜€¡¥Ì¹¹Õ±°¡ÉÙ”¤ñð¥Ì¹¹Õ±°¡½Á•Ì¤¤É•ÑÕÉ¸ ¤4(€‘¥™˜€ð´€¡½Á•Ì‘Á½½±•‘}­…ÁÁ„€´ÉÙ”‘Á½½±•‘}­…ÁÁ„¤€¼ÉÙ”‘Á½½±•‘}­…ÁÁ„€¨€ÄÀÀ4(€½Ù•É±…À€ð´€„¡½Á•Ì‘¥}­…ÁÁ…lÉt€ðÉÙ”‘¥}­…ÁÁ…lÅtðÉÙ”‘¥}­…ÁÁ…lÉt€ð½Á•Ì‘¥}­…ÁÁ…lÅt¤4(€…Ð¡ÍÁÉ¥¹Ñ˜ ‰q¸•Ìéq¸€IYè€”¸Í˜€ ”¸Í˜°€”¸Í˜¥q¸€=ALè€”¸Í˜€ ”¸Í˜°€”¸Í˜¥q¸€¥™˜è€”¬¸Å˜””°$½Ù•É±…Àè€•Íq¸ˆ°4(€€€€€€€€€€€€€±…‰•°°4(€€€€€€€€€€€€€ÉÙ”‘Á½½±•‘}­…ÁÁ„°ÉÙ”‘¥}­…ÁÁ…lÅt°ÉÙ”‘¥}­…ÁÁ…lÉt°4(€€€€€€€€€€€€€½Á•Ì‘Á½½±•‘}­…ÁÁ„°½Á•Ì‘¥}­…ÁÁ…lÅt°½Á•Ì‘¥}­…ÁÁ…lÉt°4(€€€€€€€€€€€€€‘¥™˜°¥™•±Í”¡½Ù•É±…À°€‰eLˆ°€‰9<ˆ¤¤¤4)ô4(4)½µÁ…É”¡¥É}É•Ì°¥É}½Á•Í}É•Ì°€‰%¹Ñ•ÈµÉ•…‘•Èˆ¤4)½µÁ…É”¡¥µ}É•Ì°¥µ}½Á•Í}É•Ì°€‰%¹Ñ•Èµµ½‘…±¥Ñäˆ¤4(4(4(Œ€ôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôô4(Œ€ÄÄ¸MU55IdQ	14(Œ€ôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôôô4(4)…Ð ‰q¸ˆ°Á…ÍÑ”¡É•À ˆôˆ°€ÜÀ¤°½±±…ÁÍ”€ô€ˆˆ¤°€‰q¸ˆ¤4)…Ð ‰MU55IdQ	1q¸ˆ¤4)…Ð¡Á…ÍÑ”¡É•À ˆôˆ°€ÜÀ¤°½±±…ÁÍ”€ô€ˆˆ¤°€‰q¸ˆ¤4(4)…Ð¡ÍÁÉ¥¹Ñ˜ ‰q¸”´ÈÕÌ€”ÕÌ€”ÙÌ€”áÌ€”ÄáÌ€”ÄáÍq¸ˆ°4(€€€€€€€€€€€€‰¹…±åÍ¥Ìˆ°€‰¬ˆ°€‰±ÕÍÐˆ°€‰•ÍÐˆ°€ˆäÔ”$ˆ°€ˆäÔ”A$ˆ¤¤4)…Ð¡Á…ÍÑ”¡É•À ˆ´ˆ°€àÔ¤°½±±…ÁÍ”€ô€ˆˆ¤°€‰q¸ˆ¤4(4)™½È€¡È¥¸ÍÕµµ…Éå}É½ÝÌ¤ì4(€…Ð¡ÍÁÉ¥¹Ñ˜ ˆ”´ÈÕÌ€”Õ€”Ù€”à¸Í˜€l”¸Í˜°€”¸Í™t€l”¸Í˜°€”¸Í™uq¸ˆ°4(€€€€€€€€€€€€€È‘±…‰•°°È‘¬°È‘±ÕÍÐ°È‘­…ÁÁ„°4(€€€€€€€€€€€€€È‘¥lÅt°È‘¥lÉt°È‘Á¥lÅt°È‘Á¥lÉt¤¤4)ô4(4)…Ð ‰q¹½¹”¹q¸ˆ¤4(

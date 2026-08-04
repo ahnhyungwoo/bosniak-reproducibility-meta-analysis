@@ -28,9 +28,9 @@ This repository contains the aggregate study-level data and R code for:
 `-- run_all.R
 ```
 
-The master extraction table contains 465 comparison records. Records with a
+The master extraction table contains 466 comparison records. Records with a
 non-empty `exclude` field are retained for transparency but are not included in
-the analysis. The final analytic dataset contains 335 comparisons from 79
+the analysis. The final analytic dataset contains 332 comparisons from 79
 studies.
 
 ## Reproducing the analyses
@@ -60,6 +60,10 @@ To reproduce only the additional analyses performed during revision, run:
 Rscript revision/analysis/revision_analyses.R
 ```
 
+This command also reproduces the leave-one-study-out checks for all moderator
+contrasts with nominal p<0.05 and the focused leave-one-abstract-study-out
+checks for the inter-reader publication-type contrast.
+
 Each script resolves its input files relative to its own location; no
 author-specific working directory is required.
 
@@ -76,7 +80,10 @@ author-specific working directory is required.
 - `data_correction_log.csv` records corrections applied transparently during
   revision.
 - `revision/analysis/results/` contains the tabular outputs from the revision
-  analyses, including item-level QAREL counts and denominators.
+  analyses, including item-level QAREL counts and denominators, full
+  leave-one-study-out iteration results, compact leave-one-study-out summaries,
+  full-model validation checks, and the focused inter-reader publication-type
+  checks.
 
 See `DATA_DICTIONARY.md` for variable definitions and analytic conventions.
 
@@ -90,7 +97,10 @@ estimate hierarchy. Prediction intervals are reported where estimable.
 Meta-regression is exploratory. Tests with Satterthwaite degrees of freedom
 below 4, or a moderator level represented by only one study and one dependency
 cluster, are treated as non-interpretable; those with degrees of freedom from 4
-to below 10 are treated as fragile.
+to below 10 are treated as fragile. Leave-one-study-out analyses are performed
+for moderator contrasts meeting the protocol's nominal p<0.05 threshold, with
+non-estimable deletion models and singleton moderator levels identified
+explicitly in the output files.
 
 ## Citation
 

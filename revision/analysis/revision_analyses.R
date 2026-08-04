@@ -1,7 +1,7 @@
 ## Bosniak reproducibility major-revision analyses
 ##
-## This script leaves the submitted datasets unchanged and writes all
-## reviewer-requested outputs under revision/analysis/results.
+## This script leaves the submitted datasets unchanged and writes the
+## additional analysis outputs under revision/analysis/results.
 
 script_arg <- grep("^--file=", commandArgs(), value = TRUE)
 if (length(script_arg) == 0) {
@@ -9,6 +9,10 @@ if (length(script_arg) == 0) {
 }
 script_path <- normalizePath(sub("^--file=", "", script_arg[1]), winslash = "/")
 project_dir <- normalizePath(file.path(dirname(script_path), "../.."), winslash = "/")
+local_lib <- file.path(project_dir, "revision", "R_lib")
+if (dir.exists(local_lib)) {
+  .libPaths(c(local_lib, .libPaths()))
+}
 
 suppressPackageStartupMessages({
   library(metafor)
@@ -231,6 +235,117 @@ im <- dat %>% filter(analytic_stratum == "inter-modality")
 intra <- dat %>% filter(analytic_stratum == "intra-reader")
 iv <- dat %>% filter(analytic_stratum == "inter-version")
 
+validate_opes_selection <- function(data) {
+  audit <- data %>%
+    filter(analytic_stratum %in% c(
+      "inter-reader", "inter-modality", "intra-reader", "inter-version"
+    )) %>%
+    group_by(analytic_stratum, study_id) %>%
+    summarise(
+      selected_effects = sum(opes_include == 1, na.rm = TRUE),
+      selected_clusters = n_distinct(
+        dep_id[coalesce(opes_include == 1, FALSE)], na.rm = TRUE
+      ),
+      .groups = "drop"
+    )
+
+  invalid <- audit %>%
+    filter(selected_effects != 1 | selected_clusters != 1)
+  if (nrow(invalid) > 0) {
+    details <- paste(
+      sprintf(
+        "%s/%s: effects=%d, clusters=%d",
+        invalid$analytic_stratum,
+        invalid$study_id,
+        invalid$selected_effects,
+        invalid$selected_clusters
+      ),
+      collapse = "; "
+    )
+    stop("Invalid one-per-study estimate selection: ", details)
+  }
+}
+
+validate_opes_selection(dat)
+
+region_levels <- c("North America", "Asia", "Europe", "Other/unspecified region")
+ir_region_data <- ir %>%
+  mutate(
+    region_display = case_when(
+      region == "North_America" ~ "North America",
+      region == "Asia" ~ "Asia",
+      region == "Europe" ~ "Europe",
+      TRUE ~ "Other/unspecified region"
+    ),
+    version_display = if_else(
+      !is.na(std_version_1) & std_version_1 == "v2019",
+      "2019 update",
+      "Non-2019"
+    ),
+    modality_display = case_when(
+      std_modality_1 == "CT" ~ "CT",
+      std_modality_1 == "MRI" ~ "MRI",
+      std_modality_1 %in% c("CEUS", "US", "SMI") ~ "CEUS/US",
+      std_modality_1 == "CT_MRI" ~ "CT/MRI",
+      TRUE ~ "Mixed/not reported"
+    ),
+    publication_display = if_else(
+      publication_type == "conference_abstract",
+      "Conference abstract",
+      "Journal article"
+    )
+  )
+
+complete_region_counts <- function(data, section, variable, level_order) {
+  observed <- data %>%
+    count(region_display, level = .data[[variable]], name = "count")
+  grid <- as_tibble(expand.grid(
+    region_display = region_levels,
+    level = level_order,
+    stringsAsFactors = FALSE
+  ))
+  totals <- data %>% count(region_display, name = "region_effects")
+
+  grid %>%
+    left_join(observed, by = c("region_display", "level")) %>%
+    left_join(totals, by = "region_display") %>%
+    mutate(
+      section = section,
+      count = coalesce(count, 0L),
+      percent = round(100 * count / region_effects),
+      region_order = match(region_display, region_levels),
+      level_order = match(level, level_order)
+    ) %>%
+    arrange(region_order, level_order) %>%
+    select(section, level, region_display, region_effects, count, percent)
+}
+
+inter_reader_region_distribution <- bind_rows(
+  complete_region_counts(
+    ir_region_data,
+    "Bosniak version",
+    "version_display",
+    c("Non-2019", "2019 update")
+  ),
+  complete_region_counts(
+    ir_region_data,
+    "Imaging modality",
+    "modality_display",
+    c("CT", "MRI", "CEUS/US", "CT/MRI", "Mixed/not reported")
+  ),
+  complete_region_counts(
+    ir_region_data,
+    "Publication type",
+    "publication_display",
+    c("Journal article", "Conference abstract")
+  )
+)
+
+write_csv(
+  inter_reader_region_distribution,
+  file.path(out_dir, "inter_reader_region_distribution.csv")
+)
+
 safe_tcrit <- function(df) {
   ifelse(is.finite(df) & df > 0, qt(0.975, df), qnorm(0.975))
 }
@@ -351,948 +466,4 @@ run_opes <- function(data, label, analysis_family = "primary") {
 }
 
 run_rho <- function(data, label, rho) {
-  d <- data %>% arrange(dep_id, comparison_id)
-  if (nrow(d) < 3 || n_distinct(d$dep_id) < 3) return(NULL)
-  working_v <- impute_covariance_matrix(
-    vi = d$vi_z,
-    cluster = d$dep_id,
-    r = rho,
-    smooth_vi = FALSE,
-    return_list = FALSE
-  )
-  model <- rma.mv(
-    yi_z,
-    V = working_v,
-    random = list(~ 1 | dep_id, ~ 1 | comparison_id),
-    data = d,
-    method = "REML"
-  )
-  robust <- coef_test(model, vcov = "CR2", cluster = d$dep_id)
-  crit <- safe_tcrit(robust$df_Satt[1])
-  ci_z <- as.numeric(model$b[1]) + c(-1, 1) * crit * robust$SE[1]
-  tibble(
-    analysis_family = "rho_sensitivity",
-    analysis = paste0(label, " (rho=", rho, ")"),
-    outcome_scale = "z",
-    cluster_mode = "dependency_correlated_working_V",
-    effects = nrow(d),
-    clusters = n_distinct(d$dep_id),
-    studies = n_distinct(d$study_id),
-    estimate = tanh(as.numeric(model$b[1])),
-    ci_lower = tanh(ci_z[1]),
-    ci_upper = tanh(ci_z[2]),
-    pi_lower = NA_real_,
-    pi_upper = NA_real_,
-    robust_se_working_scale = robust$SE[1],
-    satterthwaite_df = robust$df_Satt[1],
-    p_value = robust$p_Satt[1]
-  )
-}
-
-summary_parts <- list(
-  run_rve(ir, "Inter-reader primary RVE+CR2", analysis_family = "primary"),
-  run_rve(im, "Inter-modality primary RVE+CR2", analysis_family = "primary"),
-  run_opes(intra, "Intra-reader primary OPES", analysis_family = "primary"),
-  run_opes(iv, "Inter-version primary OPES", analysis_family = "primary"),
-  run_rve(
-    ir %>% filter(standard_adult),
-    "Inter-reader standard-scheme adult-only",
-    analysis_family = "standard_adult"
-  ),
-  run_rve(
-    im %>% filter(standard_adult),
-    "Inter-modality standard-scheme adult-only",
-    analysis_family = "standard_adult"
-  ),
-  run_opes(
-    im %>% filter(standard_adult, mod_pair == "CT_CEUS_US"),
-    "CT-US-based standard-scheme adult-only OPES",
-    analysis_family = "standard_adult"
-  ),
-  run_rve(
-    ir %>% filter(variance_source %in% c("reported_CI", "reported_SE")),
-    "Inter-reader directly reported variance only",
-    analysis_family = "variance_source"
-  ),
-  run_rve(
-    im %>% filter(variance_source %in% c("reported_CI", "reported_SE")),
-    "Inter-modality directly reported variance only",
-    analysis_family = "variance_source"
-  ),
-  run_rve(
-    ir,
-    "Inter-reader untransformed kappa",
-    outcome = "kappa",
-    analysis_family = "transformation"
-  ),
-  run_rve(
-    im,
-    "Inter-modality untransformed kappa",
-    outcome = "kappa",
-    analysis_family = "transformation"
-  ),
-  run_rve(
-    ir,
-    "Inter-reader study-level clustering",
-    cluster_mode = "study",
-    analysis_family = "cluster"
-  ),
-  run_rve(
-    im,
-    "Inter-modality study-level clustering",
-    cluster_mode = "study",
-    analysis_family = "cluster"
-  ),
-  run_rve(
-    ir %>% filter(nc >= 30),
-    "Inter-reader n>=30 lesions",
-    analysis_family = "sample_size"
-  ),
-  run_rve(
-    im %>% filter(nc >= 30),
-    "Inter-modality n>=30 lesions",
-    analysis_family = "sample_size"
-  ),
-  run_rve(
-    ir %>% filter(representative_spectrum == "Yes"),
-    "Inter-reader representative-spectrum studies",
-    analysis_family = "representative_spectrum"
-  ),
-  run_rve(
-    im %>% filter(representative_spectrum == "Yes"),
-    "Inter-modality representative-spectrum studies",
-    analysis_family = "representative_spectrum"
-  )
-)
-
-for (rho in c(0, 0.3, 0.5, 0.8)) {
-  summary_parts <- append(
-    summary_parts,
-    list(
-      run_rho(ir, "Inter-reader", rho),
-      run_rho(im, "Inter-modality", rho)
-    )
-  )
-}
-
-analysis_summary <- bind_rows(summary_parts)
-write_csv(analysis_summary, file.path(out_dir, "revision_analysis_summary.csv"))
-
-variance_counts <- dat %>%
-  filter(analytic_stratum %in% c(
-    "inter-reader", "inter-modality", "intra-reader", "inter-version"
-  )) %>%
-  group_by(analytic_stratum, variance_source) %>%
-  summarise(
-    effects = n(),
-    studies = n_distinct(study_id),
-    clusters = n_distinct(dep_id),
-    .groups = "drop"
-  )
-write_csv(variance_counts, file.path(out_dir, "variance_source_counts.csv"))
-
-weight_counts <- dat %>%
-  filter(analytic_stratum %in% c("inter-reader", "inter-modality")) %>%
-  mutate(weight_scheme_report = coalesce(weight_scheme, "unspecified")) %>%
-  group_by(analytic_stratum, weight_scheme_report) %>%
-  summarise(
-    effects = n(),
-    studies = n_distinct(study_id),
-    clusters = n_distinct(dep_id),
-    .groups = "drop"
-  )
-write_csv(weight_counts, file.path(out_dir, "weight_scheme_counts.csv"))
-
-active_comp <- comp %>%
-  filter(is.na(exclude) | trimws(exclude) == "")
-primary_strata <- c(
-  "inter-reader", "inter-modality", "intra-reader", "inter-version"
-)
-included_study_ids <- sort(unique(active_comp$study_id))
-
-comparison_accounting <- tibble(
-  item = c(
-    "Included studies",
-    "All retained comparisons",
-    "Primary-stratum comparisons",
-    "Inter-reader comparisons",
-    "Inter-modality comparisons",
-    "Intra-reader comparisons",
-    "Inter-version comparisons",
-    "Technical/read-condition comparisons",
-    "Studies reporting patient count",
-    "Patients across reporting studies",
-    "Studies reporting cyst count",
-    "Cysts across reporting studies"
-  ),
-  value = c(
-    length(included_study_ids),
-    nrow(active_comp),
-    sum(active_comp$analytic_stratum %in% primary_strata),
-    sum(active_comp$analytic_stratum == "inter-reader"),
-    sum(active_comp$analytic_stratum == "inter-modality"),
-    sum(active_comp$analytic_stratum == "intra-reader"),
-    sum(active_comp$analytic_stratum == "inter-version"),
-    sum(active_comp$analytic_stratum == "technical-comparison"),
-    sum(
-      stud$study_id %in% included_study_ids &
-        !is.na(suppressWarnings(as.numeric(stud$n_patients)))
-    ),
-    sum(
-      suppressWarnings(as.numeric(
-        stud$n_patients[stud$study_id %in% included_study_ids]
-      )),
-      na.rm = TRUE
-    ),
-    sum(
-      stud$study_id %in% included_study_ids &
-        !is.na(suppressWarnings(as.numeric(stud$n_cysts)))
-    ),
-    sum(
-      suppressWarnings(as.numeric(
-        stud$n_cysts[stud$study_id %in% included_study_ids]
-      )),
-      na.rm = TRUE
-    )
-  )
-)
-write_csv(
-  comparison_accounting,
-  file.path(out_dir, "comparison_accounting.csv")
-)
-
-reported_by_stratum <- active_comp %>%
-  filter(analytic_stratum %in% primary_strata) %>%
-  mutate(
-    reported_metric = case_when(
-      !is.na(suppressWarnings(as.numeric(kappa))) ~ "kappa",
-      !is.na(observed_agreement) & trimws(observed_agreement) != "" ~
-        "percentage agreement",
-      !is.na(gwet_ac1) & trimws(gwet_ac1) != "" ~ "Gwet AC1",
-      !is.na(gwet_ac2) & trimws(gwet_ac2) != "" ~ "Gwet AC2",
-      !is.na(icc) & trimws(icc) != "" ~ "ICC",
-      !is.na(krippendorff_alpha) & trimws(krippendorff_alpha) != "" ~
-        "Krippendorff alpha",
-      TRUE ~ "other/non-kappa"
-    )
-  ) %>%
-  group_by(study_id, analytic_stratum) %>%
-  summarise(
-    retained_comparisons = n(),
-    retained_metric_types = paste(sort(unique(reported_metric)), collapse = "; "),
-    .groups = "drop"
-  )
-
-kappa_by_stratum <- dat %>%
-  filter(analytic_stratum %in% primary_strata) %>%
-  group_by(study_id, analytic_stratum) %>%
-  summarise(
-    eligible_kappa_effects = n(),
-    selected_opes_effects = sum(opes_include == 1, na.rm = TRUE),
-    .groups = "drop"
-  )
-
-study_stratum_accounting <- reported_by_stratum %>%
-  left_join(
-    stud %>%
-      select(study_id, first_author, year, publication_type),
-    by = "study_id"
-  ) %>%
-  left_join(
-    kappa_by_stratum,
-    by = c("study_id", "analytic_stratum")
-  ) %>%
-  mutate(
-    eligible_kappa_effects = coalesce(eligible_kappa_effects, 0L),
-    selected_opes_effects = coalesce(selected_opes_effects, 0L),
-    primary_model_status = case_when(
-      analytic_stratum %in% c("inter-reader", "inter-modality") &
-        eligible_kappa_effects > 0 ~
-        "Included in primary all-eligible-kappa RVE+CR2 model",
-      analytic_stratum %in% c("inter-reader", "inter-modality") ~
-        "Excluded from kappa pooling: only non-kappa metric(s) reported",
-      analytic_stratum %in% c("intra-reader", "inter-version") &
-        selected_opes_effects > 0 ~
-        "Included in primary OPES model (one selected effect per study)",
-      analytic_stratum %in% c("intra-reader", "inter-version") &
-        eligible_kappa_effects > 0 ~
-        paste(
-          "Eligible dependent kappa effect(s) retained in all-effects",
-          "sensitivity analysis; not selected by OPES hierarchy"
-        ),
-      TRUE ~
-        "Excluded from kappa pooling: only non-kappa metric(s) reported"
-    )
-  ) %>%
-  arrange(
-    factor(analytic_stratum, levels = primary_strata),
-    year,
-    first_author
-  ) %>%
-  select(
-    analytic_stratum, study_id, first_author, year, publication_type,
-    retained_comparisons, retained_metric_types, eligible_kappa_effects,
-    selected_opes_effects, primary_model_status
-  )
-write_csv(
-  study_stratum_accounting,
-  file.path(out_dir, "per_stratum_study_accounting.csv")
-)
-
-version_audit <- stud %>%
-  filter(study_id %in% included_study_ids) %>%
-  left_join(
-    active_comp %>%
-      group_by(study_id) %>%
-      summarise(
-        analytic_standardized_versions = paste(
-          sort(unique(na.omit(c(std_version_1, std_version_2)))),
-          collapse = "; "
-        ),
-        .groups = "drop"
-      ),
-    by = "study_id"
-  ) %>%
-  mutate(
-    submitted_table_display_error = study_id %in% c(
-      "Rosenkrantz_2014", "Seppala_2014", "Rocca_2016",
-      "Ragel_2016", "Sanz_2016", "Pitra_2018",
-      "Shaish_2019", "Lerchbaumer_2020", "Lucocq_2021"
-    ),
-    audit_disposition = if_else(
-      submitted_table_display_error,
-      paste(
-        "Corrected Table 1 display from v2019 to original/pre-2019;",
-        "analytic standardized coding was already original"
-      ),
-      "No version-display correction required"
-    )
-  ) %>%
-  select(
-    study_id, first_author, year, bosniak_version,
-    analytic_standardized_versions, submitted_table_display_error,
-    audit_disposition
-  ) %>%
-  arrange(year, first_author)
-write_csv(version_audit, file.path(out_dir, "version_audit_79_studies.csv"))
-
-cat("\nRevision sensitivity-analysis summary\n")
-print(analysis_summary, n = Inf, width = Inf)
-cat("\nVariance-source counts\n")
-print(variance_counts, n = Inf, width = Inf)
-cat("\nWeight-scheme counts\n")
-print(weight_counts, n = Inf, width = Inf)
-
-
-## ------------------------------------------------------------------
-## Version analyses
-## ------------------------------------------------------------------
-
-version_ct <- ir %>%
-  filter(
-    std_modality_1 == "CT",
-    std_version_1 %in% c("original", "v2019")
-  ) %>%
-  mutate(is_v2019 = if_else(std_version_1 == "v2019", 1, 0))
-
-version_ct_model <- rma.mv(
-  yi_z ~ is_v2019,
-  vi_z,
-  random = list(~ 1 | dep_id, ~ 1 | comparison_id),
-  data = version_ct,
-  method = "REML"
-)
-version_ct_robust <- coef_test(
-  version_ct_model,
-  vcov = "CR2",
-  cluster = version_ct$dep_id
-)
-version_effect <- version_ct_robust[2, ]
-version_crit <- safe_tcrit(version_effect$df_Satt)
-version_ci_z <- version_effect$beta +
-  c(-1, 1) * version_crit * version_effect$SE
-version_baseline_z <- version_ct_robust$beta[1]
-version_kappa_difference <- tanh(version_baseline_z + version_effect$beta) -
-  tanh(version_baseline_z)
-version_kappa_difference_ci <- tanh(version_baseline_z + version_ci_z) -
-  tanh(version_baseline_z)
-
-version_ct_summary <- tibble(
-  analysis = "CT-only inter-reader version meta-regression",
-  effects = nrow(version_ct),
-  studies = n_distinct(version_ct$study_id),
-  clusters = n_distinct(version_ct$dep_id),
-  original_effects = sum(version_ct$is_v2019 == 0),
-  v2019_effects = sum(version_ct$is_v2019 == 1),
-  beta_z = version_effect$beta,
-  se_z = version_effect$SE,
-  df = version_effect$df_Satt,
-  p_value = version_effect$p_Satt,
-  ci_lower_z = version_ci_z[1],
-  ci_upper_z = version_ci_z[2],
-  original_reference_kappa = tanh(version_baseline_z),
-  approximate_kappa_difference = version_kappa_difference,
-  approximate_kappa_difference_ci_lower = version_kappa_difference_ci[1],
-  approximate_kappa_difference_ci_upper = version_kappa_difference_ci[2]
-)
-write_csv(version_ct_summary, file.path(out_dir, "version_ct_model.csv"))
-
-struct_order <- c(
-  pooled = 1,
-  single_pair = 2,
-  single = 3,
-  pairwise = 4,
-  subgroup = 5,
-  vs_reference = 6
-)
-
-version_pair_candidates <- ir %>%
-  filter(std_version_1 %in% c("original", "v2019")) %>%
-  group_by(study_id) %>%
-  summarise(
-    has_original = any(std_version_1 == "original"),
-    has_v2019 = any(std_version_1 == "v2019"),
-    .groups = "drop"
-  ) %>%
-  filter(has_original, has_v2019) %>%
-  pull(study_id)
-
-matched_pairs <- list()
-unmatched_version_studies <- character()
-for (sid in sort(version_pair_candidates)) {
-  study_data <- ir %>%
-    filter(
-      study_id == sid,
-      std_version_1 %in% c("original", "v2019")
-    )
-  original_data <- study_data %>% filter(std_version_1 == "original")
-  v2019_data <- study_data %>% filter(std_version_1 == "v2019")
-
-  common_cells <- inner_join(
-    original_data %>% distinct(std_modality_1, reader_structure),
-    v2019_data %>% distinct(std_modality_1, reader_structure),
-    by = c("std_modality_1", "reader_structure")
-  )
-  if (nrow(common_cells) == 0) {
-    unmatched_version_studies <- c(unmatched_version_studies, sid)
-    next
-  }
-
-  common_cells <- common_cells %>%
-    mutate(
-      structure_rank = if_else(
-        reader_structure %in% names(struct_order),
-        unname(struct_order[reader_structure]),
-        99
-      )
-    )
-  cell_candidates <- vector("list", nrow(common_cells))
-  for (idx in seq_len(nrow(common_cells))) {
-    cell_modality <- common_cells$std_modality_1[idx]
-    cell_structure <- common_cells$reader_structure[idx]
-    cell_rows <- study_data %>%
-      filter(
-        std_modality_1 == cell_modality,
-        reader_structure == cell_structure
-      )
-    cell_candidates[[idx]] <- tibble(
-      std_modality_1 = cell_modality,
-      reader_structure = cell_structure,
-      structure_rank = common_cells$structure_rank[idx],
-      maximum_n = max(cell_rows$nc, na.rm = TRUE)
-    )
-  }
-  best_cell <- bind_rows(cell_candidates) %>%
-    arrange(structure_rank, desc(maximum_n)) %>%
-    slice(1)
-
-  pick_one <- function(data, modality_value, structure_value) {
-    data %>%
-      filter(
-        std_modality_1 == modality_value,
-        reader_structure == structure_value
-      ) %>%
-      mutate(n_for_order = coalesce(nc, 0)) %>%
-      arrange(desc(n_for_order), comparison_id) %>%
-      slice(1)
-  }
-
-  original_row <- pick_one(
-    original_data,
-    best_cell$std_modality_1,
-    best_cell$reader_structure
-  )
-  v2019_row <- pick_one(
-    v2019_data,
-    best_cell$std_modality_1,
-    best_cell$reader_structure
-  )
-
-  matched_pairs[[length(matched_pairs) + 1]] <- tibble(
-    study_id = sid,
-    modality = best_cell$std_modality_1,
-    reader_structure = best_cell$reader_structure,
-    original_comparison_id = original_row$comparison_id,
-    v2019_comparison_id = v2019_row$comparison_id,
-    original_kappa = original_row$kappa_num,
-    v2019_kappa = v2019_row$kappa_num,
-    original_yi = original_row$yi_z,
-    v2019_yi = v2019_row$yi_z,
-    original_vi = original_row$vi_z,
-    v2019_vi = v2019_row$vi_z,
-    raw_kappa_difference = v2019_row$kappa_num - original_row$kappa_num
-  )
-}
-
-matched_pairs <- bind_rows(matched_pairs) %>%
-  mutate(
-    yi_difference = v2019_yi - original_yi,
-    vi_difference = original_vi + v2019_vi
-  )
-write_csv(matched_pairs, file.path(out_dir, "version_matched_pairs.csv"))
-
-original_pooled <- rma(original_yi, original_vi, data = matched_pairs, method = "REML")
-v2019_pooled <- rma(v2019_yi, v2019_vi, data = matched_pairs, method = "REML")
-matched_difference_model <- rma(
-  yi_difference,
-  vi_difference,
-  data = matched_pairs,
-  method = "REML"
-)
-matched_original_kappa <- tanh(as.numeric(original_pooled$b[1]))
-matched_v2019_kappa <- tanh(as.numeric(v2019_pooled$b[1]))
-matched_difference_kappa <- tanh(
-  as.numeric(original_pooled$b[1]) + as.numeric(matched_difference_model$b[1])
-) - matched_original_kappa
-matched_difference_kappa_ci <- tanh(
-  as.numeric(original_pooled$b[1]) +
-    c(matched_difference_model$ci.lb, matched_difference_model$ci.ub)
-) - matched_original_kappa
-
-matched_version_summary <- tibble(
-  analysis = "Exact within-study matched version comparison",
-  candidate_studies = length(version_pair_candidates),
-  matched_studies = nrow(matched_pairs),
-  unmatched_studies = paste(unmatched_version_studies, collapse = "; "),
-  pooled_original_kappa = matched_original_kappa,
-  pooled_original_ci_lower = tanh(original_pooled$ci.lb),
-  pooled_original_ci_upper = tanh(original_pooled$ci.ub),
-  pooled_v2019_kappa = matched_v2019_kappa,
-  pooled_v2019_ci_lower = tanh(v2019_pooled$ci.lb),
-  pooled_v2019_ci_upper = tanh(v2019_pooled$ci.ub),
-  beta_difference_z = as.numeric(matched_difference_model$b[1]),
-  beta_difference_ci_lower_z = matched_difference_model$ci.lb,
-  beta_difference_ci_upper_z = matched_difference_model$ci.ub,
-  p_value = matched_difference_model$pval,
-  approximate_kappa_difference = matched_difference_kappa,
-  approximate_kappa_difference_ci_lower = matched_difference_kappa_ci[1],
-  approximate_kappa_difference_ci_upper = matched_difference_kappa_ci[2],
-  raw_mean_kappa_difference = mean(matched_pairs$raw_kappa_difference)
-)
-write_csv(
-  matched_version_summary,
-  file.path(out_dir, "version_matched_summary.csv")
-)
-
-
-## ------------------------------------------------------------------
-## Meta-regression table with confidence intervals, FDR, and counts
-## ------------------------------------------------------------------
-
-level_count_text <- function(data, variable, label_map = NULL) {
-  values <- as.character(data[[variable]])
-  count_data <- data %>%
-    mutate(.level = values) %>%
-    filter(!is.na(.level)) %>%
-    group_by(.level) %>%
-    summarise(
-      effects = n(),
-      studies = n_distinct(study_id),
-      clusters = n_distinct(dep_id),
-      .groups = "drop"
-    )
-  if (!is.null(label_map)) {
-    count_data$.level <- if_else(
-      count_data$.level %in% names(label_map),
-      unname(label_map[count_data$.level]),
-      count_data$.level
-    )
-  }
-  paste(
-    sprintf(
-      "%s: %d effects/%d studies/%d clusters",
-      count_data$.level,
-      count_data$effects,
-      count_data$studies,
-      count_data$clusters
-    ),
-    collapse = "; "
-  )
-}
-
-run_meta_regression <- function(
-    data,
-    formula,
-    stratum,
-    moderator,
-    level_variable = NULL,
-    level_label_map = NULL,
-    contrast_label_map = NULL) {
-  if (nrow(data) < 3 || n_distinct(data$dep_id) < 3) return(NULL)
-  model <- rma.mv(
-    formula,
-    V = data$vi_z,
-    random = list(~ 1 | dep_id, ~ 1 | comparison_id),
-    data = data,
-    method = "REML"
-  )
-  robust <- coef_test(model, vcov = "CR2", cluster = data$dep_id)
-  result <- tibble(
-    term = rownames(robust),
-    beta = robust$beta,
-    se = robust$SE,
-    df = robust$df_Satt,
-    p_raw = robust$p_Satt
-  ) %>%
-    filter(term != "intrcpt") %>%
-    mutate(
-      critical_value = safe_tcrit(df),
-      ci_lower = beta - critical_value * se,
-      ci_upper = beta + critical_value * se,
-      stratum = stratum,
-      moderator = moderator,
-      contrast = term,
-      effects = nrow(data),
-      studies = n_distinct(data$study_id),
-      clusters = n_distinct(data$dep_id),
-      level_counts = if (is.null(level_variable)) {
-        sprintf(
-          "Overall: %d effects/%d studies/%d clusters",
-          nrow(data),
-          n_distinct(data$study_id),
-          n_distinct(data$dep_id)
-        )
-      } else {
-        level_count_text(data, level_variable, level_label_map)
-      }
-    )
-  if (!is.null(contrast_label_map)) {
-    result$contrast <- if_else(
-      result$term %in% names(contrast_label_map),
-      unname(contrast_label_map[result$term]),
-      result$term
-    )
-  }
-  result %>%
-    select(
-      stratum, moderator, contrast, effects, studies, clusters,
-      level_counts, beta, se, ci_lower, ci_upper, df, p_raw
-    )
-}
-
-meta_parts <- list()
-
-ir_ncat <- ir %>%
-  filter(ncat_group %in% c("2-3", "4-5")) %>%
-  mutate(is_full = if_else(ncat_group == "4-5", 1, 0))
-meta_parts <- append(meta_parts, list(run_meta_regression(
-  ir_ncat, yi_z ~ is_full, "Inter-reader", "No. of categories",
-  "is_full", c("0" = "2-3", "1" = "4-5"),
-  c(is_full = "4-5 vs 2-3")
-)))
-
-ir_weight <- ir %>%
-  filter(wt_group %in% c("weighted", "unweighted")) %>%
-  mutate(is_weighted = if_else(wt_group == "weighted", 1, 0))
-meta_parts <- append(meta_parts, list(run_meta_regression(
-  ir_weight, yi_z ~ is_weighted, "Inter-reader", "Weight scheme",
-  "is_weighted", c("0" = "Unweighted", "1" = "Weighted"),
-  c(is_weighted = "Weighted vs unweighted")
-)))
-
-ir_modality <- ir %>%
-  filter(mod_group %in% c("CT", "MRI", "CEUS_US")) %>%
-  mutate(modality = factor(mod_group, levels = c("CT", "MRI", "CEUS_US")))
-meta_parts <- append(meta_parts, list(run_meta_regression(
-  ir_modality, yi_z ~ modality, "Inter-reader", "Imaging modality",
-  "mod_group", NULL,
-  c(
-    modalityMRI = "MRI vs CT",
-    modalityCEUS_US = "CEUS/US vs CT"
-  )
-)))
-
-meta_parts <- append(meta_parts, list(run_meta_regression(
-  version_ct, yi_z ~ is_v2019, "Inter-reader", "Bosniak version (CT-only)",
-  "is_v2019", c("0" = "Original", "1" = "v2019"),
-  c(is_v2019 = "v2019 vs original")
-)))
-
-ir_publication <- ir %>%
-  filter(pub_group %in% c("fulltext", "abstract")) %>%
-  mutate(is_abstract = if_else(pub_group == "abstract", 1, 0))
-meta_parts <- append(meta_parts, list(run_meta_regression(
-  ir_publication, yi_z ~ is_abstract, "Inter-reader", "Publication type",
-  "is_abstract", c("0" = "Full text", "1" = "Abstract"),
-  c(is_abstract = "Abstract vs full text")
-)))
-
-meta_parts <- append(meta_parts, list(run_meta_regression(
-  ir %>% filter(!is.na(log_nc)),
-  yi_z ~ log_nc, "Inter-reader", "log(sample size)"
-)))
-
-ir_readers <- ir %>%
-  mutate(
-    reader_count_group = case_when(
-      n_readers_num == 2 ~ "2",
-      n_readers_num >= 3 ~ "3plus",
-      TRUE ~ NA_character_
-    )
-  ) %>%
-  filter(!is.na(reader_count_group)) %>%
-  mutate(is_3plus = if_else(reader_count_group == "3plus", 1, 0))
-meta_parts <- append(meta_parts, list(run_meta_regression(
-  ir_readers, yi_z ~ is_3plus, "Inter-reader", "No. of readers",
-  "is_3plus", c("0" = "2", "1" = "3 or more"),
-  c(is_3plus = "3 or more vs 2")
-)))
-
-meta_parts <- append(meta_parts, list(run_meta_regression(
-  ir %>% filter(!is.na(exp_mean_num)),
-  yi_z ~ exp_mean_num, "Inter-reader", "Mean reader experience"
-)))
-
-ir_specialty <- ir %>%
-  filter(!is.na(spec_group)) %>%
-  mutate(is_subspecialty = if_else(spec_group == "subspecialty", 1, 0))
-meta_parts <- append(meta_parts, list(run_meta_regression(
-  ir_specialty, yi_z ~ is_subspecialty,
-  "Inter-reader", "Reader subspecialization",
-  "is_subspecialty",
-  c("0" = "Other", "1" = "Subspecialty"),
-  c(is_subspecialty = "Subspecialty vs other")
-)))
-
-ir_blinding <- ir %>%
-  filter(!is.na(blind_group)) %>%
-  mutate(blinding_reported_binary = if_else(blind_group == "reported", 1, 0))
-meta_parts <- append(meta_parts, list(run_meta_regression(
-  ir_blinding, yi_z ~ blinding_reported_binary,
-  "Inter-reader", "Blinding reported",
-  "blinding_reported_binary",
-  c("0" = "Not reported", "1" = "Reported"),
-  c(blinding_reported_binary = "Reported vs not reported")
-)))
-
-ir_structure <- ir %>%
-  filter(!is.na(structure_group)) %>%
-  mutate(is_pooled = if_else(structure_group == "pooled", 1, 0))
-meta_parts <- append(meta_parts, list(run_meta_regression(
-  ir_structure, yi_z ~ is_pooled, "Inter-reader", "Reader structure",
-  "is_pooled", c("0" = "Other", "1" = "Pooled"),
-  c(is_pooled = "Pooled vs other")
-)))
-
-meta_parts <- append(meta_parts, list(run_meta_regression(
-  ir %>% filter(!is.na(year_num)),
-  yi_z ~ year_num, "Inter-reader", "Publication year"
-)))
-
-ir_design <- ir %>%
-  filter(design_group %in% c("retrospective", "prospective")) %>%
-  mutate(is_prospective = if_else(design_group == "prospective", 1, 0))
-meta_parts <- append(meta_parts, list(run_meta_regression(
-  ir_design, yi_z ~ is_prospective, "Inter-reader", "Study design",
-  "is_prospective",
-  c("0" = "Retrospective", "1" = "Prospective"),
-  c(is_prospective = "Prospective vs retrospective")
-)))
-
-ir_region <- ir %>%
-  filter(region_group %in% c("North_America", "Asia", "Europe")) %>%
-  mutate(
-    region_factor = factor(
-      region_group,
-      levels = c("North_America", "Asia", "Europe")
-    )
-  )
-meta_parts <- append(meta_parts, list(run_meta_regression(
-  ir_region, yi_z ~ region_factor, "Inter-reader", "Region",
-  "region_group", NULL,
-  c(
-    region_factorAsia = "Asia vs North America",
-    region_factorEurope = "Europe vs North America"
-  )
-)))
-
-ir_rep <- ir %>%
-  mutate(rep_yes = if_else(representative_spectrum == "Yes", 1, 0))
-meta_parts <- append(meta_parts, list(run_meta_regression(
-  ir_rep, yi_z ~ rep_yes, "Inter-reader", "Representative spectrum",
-  "rep_yes",
-  c("0" = "No/unclear", "1" = "Yes"),
-  c(rep_yes = "Yes vs no/unclear")
-)))
-
-im_ncat <- im %>%
-  filter(ncat_group %in% c("2-3", "4-5")) %>%
-  mutate(is_full = if_else(ncat_group == "4-5", 1, 0))
-meta_parts <- append(meta_parts, list(run_meta_regression(
-  im_ncat, yi_z ~ is_full, "Inter-modality", "No. of categories",
-  "is_full", c("0" = "2-3", "1" = "4-5"),
-  c(is_full = "4-5 vs 2-3")
-)))
-
-im_pair <- im %>%
-  filter(mod_pair %in% c("CT_MRI", "CT_CEUS_US")) %>%
-  mutate(
-    pair_factor = factor(mod_pair, levels = c("CT_MRI", "CT_CEUS_US"))
-  )
-meta_parts <- append(meta_parts, list(run_meta_regression(
-  im_pair, yi_z ~ pair_factor, "Inter-modality", "Modality pair",
-  "mod_pair", NULL,
-  c(pair_factorCT_CEUS_US = "CT-US-based vs CT-MRI")
-)))
-
-meta_parts <- append(meta_parts, list(run_meta_regression(
-  im %>% filter(!is.na(log_nc)),
-  yi_z ~ log_nc, "Inter-modality", "log(sample size)"
-)))
-
-im_publication <- im %>%
-  filter(pub_group %in% c("fulltext", "abstract")) %>%
-  mutate(is_abstract = if_else(pub_group == "abstract", 1, 0))
-meta_parts <- append(meta_parts, list(run_meta_regression(
-  im_publication, yi_z ~ is_abstract, "Inter-modality", "Publication type",
-  "is_abstract", c("0" = "Full text", "1" = "Abstract"),
-  c(is_abstract = "Abstract vs full text")
-)))
-
-meta_parts <- append(meta_parts, list(run_meta_regression(
-  im %>% filter(!is.na(exp_mean_num)),
-  yi_z ~ exp_mean_num, "Inter-modality", "Mean reader experience"
-)))
-
-im_specialty <- im %>%
-  filter(!is.na(spec_group)) %>%
-  mutate(is_subspecialty = if_else(spec_group == "subspecialty", 1, 0))
-meta_parts <- append(meta_parts, list(run_meta_regression(
-  im_specialty, yi_z ~ is_subspecialty,
-  "Inter-modality", "Reader subspecialization",
-  "is_subspecialty",
-  c("0" = "Other", "1" = "Subspecialty"),
-  c(is_subspecialty = "Subspecialty vs other")
-)))
-
-im_blinding <- im %>%
-  filter(!is.na(blind_group)) %>%
-  mutate(blinding_reported_binary = if_else(blind_group == "reported", 1, 0))
-meta_parts <- append(meta_parts, list(run_meta_regression(
-  im_blinding, yi_z ~ blinding_reported_binary,
-  "Inter-modality", "Blinding reported",
-  "blinding_reported_binary",
-  c("0" = "Not reported", "1" = "Reported"),
-  c(blinding_reported_binary = "Reported vs not reported")
-)))
-
-meta_parts <- append(meta_parts, list(run_meta_regression(
-  im %>% filter(!is.na(year_num)),
-  yi_z ~ year_num, "Inter-modality", "Publication year"
-)))
-
-im_weight <- im %>%
-  filter(wt_group %in% c("weighted", "unweighted")) %>%
-  mutate(is_weighted = if_else(wt_group == "weighted", 1, 0))
-meta_parts <- append(meta_parts, list(run_meta_regression(
-  im_weight, yi_z ~ is_weighted, "Inter-modality", "Weight scheme",
-  "is_weighted", c("0" = "Unweighted", "1" = "Weighted"),
-  c(is_weighted = "Weighted vs unweighted")
-)))
-
-im_readers <- im %>%
-  mutate(
-    reader_count_group = case_when(
-      n_readers_num == 1 ~ "1",
-      n_readers_num == 2 ~ "2",
-      n_readers_num >= 3 ~ "3plus",
-      TRUE ~ NA_character_
-    )
-  ) %>%
-  filter(!is.na(reader_count_group)) %>%
-  mutate(
-    reader_count_factor = factor(
-      reader_count_group,
-      levels = c("1", "2", "3plus")
-    )
-  )
-meta_parts <- append(meta_parts, list(run_meta_regression(
-  im_readers, yi_z ~ reader_count_factor,
-  "Inter-modality", "No. of readers",
-  "reader_count_group", NULL,
-  c(
-    reader_count_factor2 = "2 vs 1",
-    reader_count_factor3plus = "3 or more vs 1"
-  )
-)))
-
-im_design <- im %>%
-  filter(design_group %in% c("retrospective", "prospective")) %>%
-  mutate(is_prospective = if_else(design_group == "prospective", 1, 0))
-meta_parts <- append(meta_parts, list(run_meta_regression(
-  im_design, yi_z ~ is_prospective, "Inter-modality", "Study design",
-  "is_prospective",
-  c("0" = "Retrospective", "1" = "Prospective"),
-  c(is_prospective = "Prospective vs retrospective")
-)))
-
-im_region <- im %>%
-  filter(region_group %in% c("North_America", "Asia", "Europe")) %>%
-  mutate(
-    region_factor = factor(
-      region_group,
-      levels = c("North_America", "Asia", "Europe")
-    )
-  )
-meta_parts <- append(meta_parts, list(run_meta_regression(
-  im_region, yi_z ~ region_factor, "Inter-modality", "Region",
-  "region_group", NULL,
-  c(
-    region_factorAsia = "Asia vs North America",
-    region_factorEurope = "Europe vs North America"
-  )
-)))
-
-im_rep <- im %>%
-  mutate(rep_yes = if_else(representative_spectrum == "Yes", 1, 0))
-meta_parts <- append(meta_parts, list(run_meta_regression(
-  im_rep, yi_z ~ rep_yes, "Inter-modality", "Representative spectrum",
-  "rep_yes",
-  c("0" = "No/unclear", "1" = "Yes"),
-  c(rep_yes = "Yes vs no/unclear")
-)))
-
-meta_regression_results <- bind_rows(meta_parts) %>%
-  mutate(
-    p_fdr_bh = p.adjust(p_raw, method = "BH"),
-    df_interpretation = case_when(
-      stratum == "Inter-modality" &
-        moderator == "Publication type" &
-        grepl("Abstract: 1 effects/1 studies/1 clusters", level_counts) ~
-        "Non-interpretable (singleton moderator level)",
-      df < 4 ~ "Non-interpretable (df<4)",
-      df < 10 ~ "Fragile (df 4-<10)",
-      TRUE ~ "Exploratory"
-    )
-  )
-write_csv(
-  meta_regression_results,
-  file.path(out_dir, "meta_regression_revision.csv")
-)
-
-cat("\nVersion CT-only model\n")
-print(version_ct_summary, n = Inf, width = Inf)
-cat("\nMatched version comparison\n")
-print(matched_version_summary, n = Inf, width = Inf)
-cat("\nMeta-regression results with BH-FDR\n")
-print(meta_regression_results, n = Inf, width = Inf)
+ ÷o6¶‰žËkºwµç@¹}É•…‘•ÉÍ}¹Õ´€ôô€Äø€ˆÄˆ°(€€€€€¹}É•…‘•ÉÍ}¹Õ´€ôô€Èø€ˆÈˆ°(€€€€€¹}É•…‘•ÉÍ}¹Õ´€øô€Ìø€ˆÍÁ±ÕÌˆ°(€€€€€QIUø9}¡…É…Ñ•É|(€€€€¤(€€¤€”ø”(€™¥±Ñ•È …¥Ì¹¹„¡É•…‘•É}½Õ¹Ñ}É½ÕÀ¤¤€”ø”(€µÕÑ…Ñ” (€€€É•…‘•É}½Õ¹Ñ}™…Ñ½È€ô™…Ñ½È (€€€€€É•…‘•É}½Õ¹Ñ}É½ÕÀ°(€€€€€±•Ù•±Ì€ôŒ ˆÄˆ°€ˆÈˆ°€ˆÍÁ±ÕÌˆ¤(€€€€¤(€€¤)µ•Ñ…}Á…ÉÑÌ€ð´…ÁÁ•¹¡µ•Ñ…}Á…ÉÑÌ°±¥ÍÐ¡ÉÕ¹}µ•Ñ…}É•É•ÍÍ¥½¸ (€¥µ}É•…‘•ÉÌ°å¥}èøÉ•…‘•É}½Õ¹Ñ}™…Ñ½È°(€€‰%¹Ñ•Èµµ½‘…±¥Ñäˆ°€‰9¼¸½˜É•…‘•ÉÌˆ°(€€‰É•…‘•É}½Õ¹Ñ}É½ÕÀˆ°9U10°(€Œ (€€€É•…‘•É}½Õ¹Ñ}™…Ñ½ÈÈ€ô€ˆÈÙÌ€Äˆ°(€€€É•…‘•É}½Õ¹Ñ}™…Ñ½ÈÍÁ±ÕÌ€ô€ˆÌ½Èµ½É”ÙÌ€Äˆ(€€¤(¤¤¤()¥µ}‘•Í¥¸€ð´¥´€”ø”(€™¥±Ñ•È¡‘•Í¥¹}É½ÕÀ€•¥¸”Œ ‰É•ÑÉ½ÍÁ•Ñ¥Ù”ˆ°€‰ÁÉ½ÍÁ•Ñ¥Ù”ˆ¤¤€”ø”(€µÕÑ…Ñ”¡¥Í}ÁÉ½ÍÁ•Ñ¥Ù”€ô¥™}•±Í”¡‘•Í¥¹}É½ÕÀ€ôô€‰ÁÉ½ÍÁ•Ñ¥Ù”ˆ°€Ä°€À¤¤)µ•Ñ…}Á…ÉÑÌ€ð´…ÁÁ•¹¡µ•Ñ…}Á…ÉÑÌ°±¥ÍÐ¡ÉÕ¹}µ•Ñ…}É•É•ÍÍ¥½¸ (€¥µ}‘•Í¥¸°å¥}èø¥Í}ÁÉ½ÍÁ•Ñ¥Ù”°€‰%¹Ñ•Èµµ½‘…±¥Ñäˆ°€‰MÑÕ‘ä‘•Í¥¸ˆ°(€€‰¥Í}ÁÉ½ÍÁ•Ñ¥Ù”ˆ°(€Œ ˆÀˆ€ô€‰I•ÑÉ½ÍÁ•Ñ¥Ù”ˆ°€ˆÄˆ€ô€‰AÉ½ÍÁ•Ñ¥Ù”ˆ¤°(€Œ¡¥Í}ÁÉ½ÍÁ•Ñ¥Ù”€ô€‰AÉ½ÍÁ•Ñ¥Ù”ÙÌÉ•ÑÉ½ÍÁ•Ñ¥Ù”ˆ¤(¤¤¤()¥µ}É•¥½¸€ð´¥´€”ø”(€™¥±Ñ•È¡É•¥½¹}É½ÕÀ€•¥¸”Œ ‰9½ÉÑ¡}µ•É¥„ˆ°€‰Í¥„ˆ°€‰ÕÉ½Á”ˆ¤¤€”ø”(€µÕÑ…Ñ” (€€€É•¥½¹}™…Ñ½È€ô™…Ñ½È (€€€€€É•¥½¹}É½ÕÀ°(€€€€€±•Ù•±Ì€ôŒ ‰9½ÉÑ¡}µ•É¥„ˆ°€‰Í¥„ˆ°€‰ÕÉ½Á”ˆ¤(€€€€¤(€€¤)µ•Ñ…}Á…ÉÑÌ€ð´…ÁÁ•¹¡µ•Ñ…}Á…ÉÑÌ°±¥ÍÐ¡ÉÕ¹}µ•Ñ…}É•É•ÍÍ¥½¸ (€¥µ}É•¥½¸°å¥}èøÉ•¥½¹}™…Ñ½È°€‰%¹Ñ•Èµµ½‘…±¥Ñäˆ°€‰I•¥½¸ˆ°(€€‰É•¥½¹}É½ÕÀˆ°9U10°(€Œ (€€€É•¥½¹}™…Ñ½ÉÍ¥„€ô€‰Í¥„ÙÌ9½ÉÑ µ•É¥„ˆ°(€€€É•¥½¹}™…Ñ½ÉÕÉ½Á”€ô€‰ÕÉ½Á”ÙÌ9½ÉÑ µ•É¥„ˆ(€€¤(¤¤¤()¥µ}É•À€ð´¥´€”ø”(€µÕÑ…Ñ”¡É•Á}å•Ì€ô¥™}•±Í”¡É•ÁÉ•Í•¹Ñ…Ñ¥Ù•}ÍÁ•ÑÉÕ´€ôô€‰e•Ìˆ°€Ä°€À¤¤)µ•Ñ…}Á…ÉÑÌ€ð´…ÁÁ•¹¡µ•Ñ…}Á…ÉÑÌ°±¥ÍÐ¡ÉÕ¹}µ•Ñ…}É•É•ÍÍ¥½¸ (€¥µ}É•À°å¥}èøÉ•Á}å•Ì°€‰%¹Ñ•Èµµ½‘…±¥Ñäˆ°€‰I•ÁÉ•Í•¹Ñ…Ñ¥Ù”ÍÁ•ÑÉÕ´ˆ°(€€‰É•Á}å•Ìˆ°(€Œ ˆÀˆ€ô€‰9¼½Õ¹±•…Èˆ°€ˆÄˆ€ô€‰e•Ìˆ¤°(€Œ¡É•Á}å•Ì€ô€‰e•ÌÙÌ¹¼½Õ¹±•…Èˆ¤(¤¤¤()µ•Ñ…}É•É•ÍÍ¥½¹}É•ÍÕ±ÑÌ€ð´‰¥¹‘}É½ÝÌ¡µ•Ñ…}Á…ÉÑÌ¤€”ø”(€µÕÑ…Ñ” (€€€Á}™‘É}‰ €ôÀ¹…‘©ÕÍÐ¡Á}É…Ü°µ•Ñ¡½€ô€‰	 ˆ¤°(€€€‘™}¥¹Ñ•ÉÁÉ•Ñ…Ñ¥½¸€ô…Í•}Ý¡•¸ (€€€€€ÍÑÉ…ÑÕ´€ôô€‰%¹Ñ•Èµµ½‘…±¥Ñäˆ€˜(€€€€€€€µ½‘•É…Ñ½È€ôô€‰AÕ‰±¥…Ñ¥½¸ÑåÁ”ˆ€˜(€€€€€€€É•Á° ‰‰ÍÑÉ…Ðè€Ä•™™•ÑÌ¼ÄÍÑÕ‘¥•Ì¼Ä±ÕÍÑ•ÉÌˆ°±•Ù•±}½Õ¹ÑÌ¤ø(€€€€€€€€‰9½¸µ¥¹Ñ•ÉÁÉ•Ñ…‰±”€¡Í¥¹±•Ñ½¸µ½‘•É…Ñ½È±•Ù•°¤ˆ°(€€€€€‘˜€ð€Ðø€‰9½¸µ¥¹Ñ•ÉÁÉ•Ñ…‰±”€¡‘˜ðÐ¤ˆ°(€€€€€‘˜€ð€ÄÀø€‰É…¥±”€¡‘˜€Ð´ðÄÀ¤ˆ°(€€€€€QIUø€‰áÁ±½É…Ñ½Éäˆ(€€€€¤(€€¤)ÝÉ¥Ñ•}ÍØ (€µ•Ñ…}É•É•ÍÍ¥½¹}É•ÍÕ±ÑÌ°(€™¥±”¹Á…Ñ ¡½ÕÑ}‘¥È°€‰µ•Ñ…}É•É•ÍÍ¥½¹}É•Ù¥Í¥½¸¹ÍØˆ¤(¤()…Ð ‰q¹Y•ÉÍ¥½¸Pµ½¹±äµ½‘•±q¸ˆ¤)ÁÉ¥¹Ð¡Ù•ÉÍ¥½¹}Ñ}ÍÕµµ…Éä°¸€ô%¹˜°Ý¥‘Ñ €ô%¹˜¤)…Ð ‰q¹5…Ñ¡•Ù•ÉÍ¥½¸½µÁ…É¥Í½¹q¸ˆ¤)ÁÉ¥¹Ð¡µ…Ñ¡•‘}Ù•ÉÍ¥½¹}ÍÕµµ…Éä°¸€ô%¹˜°Ý¥‘Ñ €ô%¹˜¤)…Ð ‰q¹5•Ñ„µÉ•É•ÍÍ¥½¸É•ÍÕ±ÑÌÝ¥Ñ 	 µIq¸ˆ¤)ÁÉ¥¹Ð¡µ•Ñ…}É•É•ÍÍ¥½¹}É•ÍÕ±ÑÌ°¸€ô%¹˜°Ý¥‘Ñ €ô%¹˜¤((ŒŒ1•…Ù”µ½¹”µÍÑÕ‘äµ½ÕÐ¡•­Ì™½È•Ù•Éäµ½‘•É…Ñ½È½¹ÑÉ…ÍÐµ••Ñ¥¹œÑ¡”(ŒŒÁÉ½Ñ½½°Ì¹½µ¥¹…°ÀðÀ¸ÀÔÑ¡É•Í¡½±¸Q¡”™Õ±°µ½‘•±Ì…É”™¥ÉÍÐ¡•­•(ŒŒ……¥¹ÍÐµ•Ñ…}É•É•ÍÍ¥½¹}É•ÍÕ±ÑÌÍ¼Ñ¡…ÐÑ¡”‘•±•Ñ¥½¸…¹…±åÍ•Ì…¹¹½Ð‘É¥™Ð(ŒŒ™É½´Ñ¡”É•Á½ÉÑ•µ½‘•°‘•™¥¹¥Ñ¥½¹Ì¸()™¥Ñ}±½Í½}Ñ…É•Ð€ð´™Õ¹Ñ¥½¸¡‘…Ñ„°™½ÉµÕ±„°Ñ…É•Ñ}Ñ•É´¤ì(€…ÁÑÕÉ•‘}Ý…É¹¥¹Ì€ð´¡…É…Ñ•È ¤(€ÑÉå…Ñ  (€€€Ý¥Ñ¡…±±¥¹!…¹‘±•ÉÌ¡ì(€€€€€¥˜€¡¹É½Ü¡‘…Ñ„¤€ð€Ìñð¹}‘¥ÍÑ¥¹Ð¡‘…Ñ„‘‘•Á}¥¤€ð€Ì¤ì(€€€€€€€ÍÑ½À ‰™•Ý•ÈÑ¡…¸Ñ¡É•”•™™•ÑÌ½È‘•Á•¹‘•¹ä±ÕÍÑ•ÉÌˆ¤(€€€€€ô(€€€€€µ½‘•°€ð´Éµ„¹µØ (€€€€€€€™½ÉµÕ±„°(€€€€€€€X€ô‘…Ñ„‘Ù¥}è°(€€€€€€€É…¹‘½´€ô±¥ÍÐ¡ø€Äð‘•Á}¥°ø€Äð½µÁ…É¥Í½¹}¥¤°(€€€€€€€‘…Ñ„€ô‘…Ñ„°(€€€€€€€µ•Ñ¡½€ô€‰I50ˆ(€€€€€€¤(€€€€€É½‰ÕÍÐ€ð´½•™}Ñ•ÍÐ¡µ½‘•°°Ù½Ø€ô€‰HÈˆ°±ÕÍÑ•È€ô‘…Ñ„‘‘•Á}¥¤(€€€€€É½‰ÕÍÑ}‘˜€ð´…Ì¹‘…Ñ„¹™É…µ”¡É½‰ÕÍÐ¤(€€€€€É½‰ÕÍÑ}‘˜‘Ñ•É´€ð´É½Ý¹…µ•Ì¡É½‰ÕÍÑ}‘˜¤(€€€€€Ñ…É•Ð€ð´É½‰ÕÍÑ}‘™mÉ½‰ÕÍÑ}‘˜‘Ñ•É´€ôôÑ…É•Ñ}Ñ•É´°€°‘É½À€ô1Mt(€€€€€¥˜€¡¹É½Ü¡Ñ…É•Ð¤€„ô€Ä¤ì(€€€€€€€ÍÑ½À¡ÍÁÉ¥¹Ñ˜ ‰Ñ…É•ÐÑ•É´€œ•ÌœÝ…Ì¹½Ð•ÍÑ¥µ…‰±”ˆ°Ñ…É•Ñ}Ñ•É´¤¤(€€€€€ô(€€€€€¥˜€ ……±°¡¥Ì¹™¥¹¥Ñ”¡Œ (€€€€€€€Ñ…É•Ð‘‰•Ñ„°Ñ…É•Ð‘M°Ñ…É•Ð‘‘™}M…ÑÐ°Ñ…É•Ð‘Á}M…ÑÐ(€€€€€€¤¤¤¤ì(€€€€€€€ÍÑ½À¡ÍÁÉ¥¹Ñ˜ ‰Ñ…É•ÐÑ•É´€œ•Ìœ¡…¹½¸µ™¥¹¥Ñ”HÈ½ÕÑÁÕÐˆ°Ñ…É•Ñ}Ñ•É´¤¤(€€€€€ô(€€€€€±¥ÍÐ (€€€€€€€½¬€ôQIU°(€€€€€€€‰•Ñ„€ô…Ì¹¹Õµ•É¥Œ¡Ñ…É•Ð‘‰•Ñ„¤°(€€€€€€€Í”€ô…Ì¹¹Õµ•É¥Œ¡Ñ…É•Ð‘M¤°(€€€€€€€‘˜€ô…Ì¹¹Õµ•É¥Œ¡Ñ…É•Ð‘‘™}M…ÑÐ¤°(€€€€€€€Á}É…Ü€ô…Ì¹¹Õµ•É¥Œ¡Ñ…É•Ð‘Á}M…ÑÐ¤°(€€€€€€€Ý…É¹¥¹Ì€ôÁ…ÍÑ”¡Õ¹¥ÅÕ”¡…ÁÑÕÉ•‘}Ý…É¹¥¹Ì¤°½±±…ÁÍ”€ô€ˆð€ˆ¤°(€€€€€€€•ÉÉ½È€ô€ˆˆ(€€€€€€¤(€€€ô°Ý…É¹¥¹œ€ô™Õ¹Ñ¥½¸¡Ü¤ì(€€€€€…ÁÑÕÉ•‘}Ý…É¹¥¹Ì€ðð´Œ¡…ÁÑÕÉ•‘}Ý…É¹¥¹Ì°½¹‘¥Ñ¥½¹5•ÍÍ…”¡Ü¤¤(€€€€€¥¹Ù½­•I•ÍÑ…ÉÐ ‰µÕ™™±•]…É¹¥¹œˆ¤(€€€ô¤°(€€€•ÉÉ½È€ô™Õ¹Ñ¥½¸¡”¤ì(€€€€€±¥ÍÐ (€€€€€€€½¬€ô1M°(€€€€€€€‰•Ñ„€ô9}É•…±|°(€€€€€€€Í”€ô9}É•…±|°(€€€€€€€‘˜€ô9}É•…±|°(€€€€€€€Á}É…Ü€ô9}É•…±|°(€€€€€€€Ý…É¹¥¹Ì€ôÁ…ÍÑ”¡Õ¹¥ÅÕ”¡…ÁÑÕÉ•‘}Ý…É¹¥¹Ì¤°½±±…ÁÍ”€ô€ˆð€ˆ¤°(€€€€€€€•ÉÉ½È€ô½¹‘¥Ñ¥½¹5•ÍÍ…”¡”¤(€€€€€€¤(€€€ô(€€¤)ô()±½Í½}ÍÁ•Ì€ð´±¥ÍÐ (€±¥ÍÐ (€€€…¹…±åÍ¥Í}¥€ô€‰%I}‰±¥¹‘¥¹}É•Á½ÉÑ•ˆ°(€€€ÍÑÉ…ÑÕ´€ô€‰%¹Ñ•ÈµÉ•…‘•Èˆ°(€€€µ½‘•É…Ñ½È€ô€‰	±¥¹‘¥¹œÉ•Á½ÉÑ•ˆ°(€€€½¹ÑÉ…ÍÐ€ô€‰I•Á½ÉÑ•ÙÌ¹½ÐÉ•Á½ÉÑ•ˆ°(€€€‘…Ñ„€ô¥É}‰±¥¹‘¥¹œ°(€€€™½ÉµÕ±„€ôå¥}èø‰±¥¹‘¥¹}É•Á½ÉÑ•‘}‰¥¹…Éä°(€€€Ñ…É•Ñ}Ñ•É´€ô€‰‰±¥¹‘¥¹}É•Á½ÉÑ•‘}‰¥¹…Éäˆ°(€€€Ñ…É•Ñ}±•Ù•±}ÍÑÕ‘¥•Ì€ô9}¡…É…Ñ•É|(€€¤°(€±¥ÍÐ (€€€…¹…±åÍ¥Í}¥€ô€‰%I}É•¥½¹}ÕÉ½Á•}ÙÍ}9½ÉÑ¡}µ•É¥„ˆ°(€€€ÍÑÉ…ÑÕ´€ô€‰%¹Ñ•ÈµÉ•…‘•Èˆ°(€€€µ½‘•É…Ñ½È€ô€‰I•¥½¸ˆ°(€€€½¹ÑÉ…ÍÐ€ô€‰ÕÉ½Á”ÙÌ9½ÉÑ µ•É¥„ˆ°(€€€‘…Ñ„€ô¥É}É•¥½¸°(€€€™½ÉµÕ±„€ôå¥}èøÉ•¥½¹}™…Ñ½È°(€€€Ñ…É•Ñ}Ñ•É´€ô€‰É•¥½¹}™…Ñ½ÉÕÉ½Á”ˆ°(€€€Ñ…É•Ñ}±•Ù•±}ÍÑÕ‘¥•Ì€ô9}¡…É…Ñ•É|(€€¤°(€±¥ÍÐ (€€€…¹…±åÍ¥Í}¥€ô€‰%5}…Ñ•½É¥•Í|Ñ|Õ}ÙÍ|É|Ìˆ°(€€€ÍÑÉ…ÑÕ´€ô€‰%¹Ñ•Èµµ½‘…±¥Ñäˆ°(€€€µ½‘•É…Ñ½È€ô€‰9¼¸½˜…Ñ•½É¥•Ìˆ°(€€€½¹ÑÉ…ÍÐ€ô€ˆÐ´ÔÙÌ€È´Ìˆ°(€€€‘…Ñ„€ô¥µ}¹…Ð°(€€€™½ÉµÕ±„€ôå¥}èø¥Í}™Õ±°°(€€€Ñ…É•Ñ}Ñ•É´€ô€‰¥Í}™Õ±°ˆ°(€€€Ñ…É•Ñ}±•Ù•±}ÍÑÕ‘¥•Ì€ô9}¡…É…Ñ•É|(€€¤°(€±¥ÍÐ (€€€…¹…±åÍ¥Í}¥€ô€‰%5}µ½‘…±¥Ñå}Á…¥É}Q}UM}ÙÍ}Q}5I$ˆ°(€€€ÍÑÉ…ÑÕ´€ô€‰%¹Ñ•Èµµ½‘…±¥Ñäˆ°(€€€µ½‘•É…Ñ½È€ô€‰5½‘…±¥ÑäÁ…¥Èˆ°(€€€½¹ÑÉ…ÍÐ€ô€‰PµULµ‰…Í•ÙÌPµ5I$ˆ°(€€€‘…Ñ„€ô¥µ}Á…¥È°(€€€™½ÉµÕ±„€ôå¥}èøÁ…¥É}™…Ñ½È°(€€€Ñ…É•Ñ}Ñ•É´€ô€‰Á…¥É}™…Ñ½ÉQ}UM}ULˆ°(€€€Ñ…É•Ñ}±•Ù•±}ÍÑÕ‘¥•Ì€ô9}¡…É…Ñ•É|(€€¤°(€±¥ÍÐ (€€€…¹…±åÍ¥Í}¥€ô€‰%5}±½}Í…µÁ±•}Í¥é”ˆ°(€€€ÍÑÉ…ÑÕ´€ô€‰%¹Ñ•Èµµ½‘…±¥Ñäˆ°(€€€µ½‘•É…Ñ½È€ô€‰±½œ¡Í…µÁ±”Í¥é”¤ˆ°(€€€½¹ÑÉ…ÍÐ€ô€‰±½}¹Œˆ°(€€€‘…Ñ„€ô¥´€”ø”™¥±Ñ•È …¥Ì¹¹„¡±½}¹Œ¤¤°(€€€™½ÉµÕ±„€ôå¥}èø±½}¹Œ°(€€€Ñ…É•Ñ}Ñ•É´€ô€‰±½}¹Œˆ°(€€€Ñ…É•Ñ}±•Ù•±}ÍÑÕ‘¥•Ì€ô9}¡…É…Ñ•É|(€€¤°(€±¥ÍÐ (€€€…¹…±åÍ¥Í}¥€ô€‰%5}ÁÕ‰±¥…Ñ¥½¹}ÑåÁ•}…‰ÍÑÉ…Ñ}ÙÍ}™Õ±±Ñ•áÐˆ°(€€€ÍÑÉ…ÑÕ´€ô€‰%¹Ñ•Èµµ½‘…±¥Ñäˆ°(€€€µ½‘•É…Ñ½È€ô€‰AÕ‰±¥…Ñ¥½¸ÑåÁ”ˆ°(€€€½¹ÑÉ…ÍÐ€ô€‰‰ÍÑÉ…ÐÙÌ™Õ±°Ñ•áÐˆ°(€€€‘…Ñ„€ô¥µ}ÁÕ‰±¥…Ñ¥½¸°(€€€™½ÉµÕ±„€ôå¥}èø¥Í}…‰ÍÑÉ…Ð°(€€€Ñ…É•Ñ}Ñ•É´€ô€‰¥Í}…‰ÍÑÉ…Ðˆ°(€€€Ñ…É•Ñ}±•Ù•±}ÍÑÕ‘¥•Ì€ôÁ…ÍÑ” (€€€€€Í½ÉÐ¡Õ¹¥ÅÕ”¡¥µ}ÁÕ‰±¥…Ñ¥½¸‘ÍÑÕ‘å}¥‘m¥µ}ÁÕ‰±¥…Ñ¥½¸‘¥Í}…‰ÍÑÉ…Ð€ôô€Åt¤¤°(€€€€€½±±…ÁÍ”€ô€ˆìˆ(€€€€¤(€€¤°(€±¥ÍÐ (€€€…¹…±åÍ¥Í}¥€ô€‰%5}É•…‘•ÉÍ|ÍÁ±ÕÍ}ÙÍ|Äˆ°(€€€ÍÑÉ…ÑÕ´€ô€‰%¹Ñ•Èµµ½‘…±¥Ñäˆ°(€€€µ½‘•É…Ñ½È€ô€‰9¼¸½˜É•…‘•ÉÌˆ°(€€€½¹ÑÉ…ÍÐ€ô€ˆÌ½Èµ½É”ÙÌ€Äˆ°(€€€‘…Ñ„€ô¥µ}É•…‘•ÉÌ°(€€€™½ÉµÕ±„€ôå¥}èøÉ•…‘•É}½Õ¹Ñ}™…Ñ½È°(€€€Ñ…É•Ñ}Ñ•É´€ô€‰É•…‘•É}½Õ¹Ñ}™…Ñ½ÈÍÁ±ÕÌˆ°(€€€Ñ…É•Ñ}±•Ù•±}ÍÑÕ‘¥•Ì€ô9}¡…É…Ñ•É|(€€¤°(€±¥ÍÐ (€€€…¹…±åÍ¥Í}¥€ô€‰%5}É•ÁÉ•Í•¹Ñ…Ñ¥Ù•}ÍÁ•ÑÉÕ´ˆ°(€€€ÍÑÉ…ÑÕ´€ô€‰%¹Ñ•Èµµ½‘…±¥Ñäˆ°(€€€µ½‘•É…Ñ½È€ô€‰I•ÁÉ•Í•¹Ñ…Ñ¥Ù”ÍÁ•ÑÉÕ´ˆ°(€€€½¹ÑÉ…ÍÐ€ô€‰e•ÌÙÌ¹¼½Õ¹±•…Èˆ°(€€€‘…Ñ„€ô¥µ}É•À°(€€€™½ÉµÕ±„€ôå¥}èøÉ•Á}å•Ì°(€€€Ñ…É•Ñ}Ñ•É´€ô€‰É•Á}å•Ìˆ°(€€€Ñ…É•Ñ}±•Ù•±}ÍÑÕ‘¥•Ì€ô9}¡…É…Ñ•É|(€€¤(¤()…¹½¹¥…±}¹½µ¥¹…°€ð´µ•Ñ…}É•É•ÍÍ¥½¹}É•ÍÕ±ÑÌ€”ø”(€™¥±Ñ•È¡Á}É…Ü€ð€À¸ÀÔ¤€”ø”(€Í•±•Ð¡ÍÑÉ…ÑÕ´°µ½‘•É…Ñ½È°½¹ÑÉ…ÍÐ°‰•Ñ„°Í”°‘˜°Á}É…Ü°‘™}¥¹Ñ•ÉÁÉ•Ñ…Ñ¥½¸¤()¥˜€¡¹É½Ü¡…¹½¹¥…±}¹½µ¥¹…°¤€„ô€à¤ì(€ÍÑ½À¡ÍÁÉ¥¹Ñ˜ (€€€€‰áÁ•Ñ••¥¡Ðµ½‘•É…Ñ½È½¹ÑÉ…ÍÑÌÝ¥Ñ ¹½µ¥¹…°ÀðÀ¸ÀÔ°™½Õ¹€•¸ˆ°(€€€¹É½Ü¡…¹½¹¥…±}¹½µ¥¹…°¤(€€¤¤)ô()ÍÁ•}­•åÌ€ð´‰¥¹‘}É½ÝÌ¡±…ÁÁ±ä¡±½Í½}ÍÁ•Ì°™Õ¹Ñ¥½¸¡à¤ì(€Ñ¥‰‰±” (€€€ÍÑÉ…ÑÕ´€ôà‘ÍÑÉ…ÑÕ´°(€€€µ½‘•É…Ñ½È€ôà‘µ½‘•É…Ñ½È°(€€€½¹ÑÉ…ÍÐ€ôà‘½¹ÑÉ…ÍÐ(€€¤)ô¤¤)­•å}½±Õµ¹Ì€ð´Œ ‰ÍÑÉ…ÑÕ´ˆ°€‰µ½‘•É…Ñ½Èˆ°€‰½¹ÑÉ…ÍÐˆ¤)¥˜€ (€¹É½Ü¡…¹Ñ¥}©½¥¸¡…¹½¹¥…±}¹½µ¥¹…°°ÍÁ•}­•åÌ°‰ä€ô­•å}½±Õµ¹Ì¤¤€ø€Àñð(€€€¹É½Ü¡…¹Ñ¥}©½¥¸¡ÍÁ•}­•åÌ°…¹½¹¥…±}¹½µ¥¹…°°‰ä€ô­•å}½±Õµ¹Ì¤¤€ø€À(¤ì(€ÍÑ½À ‰1=M<ÍÁ•¥™¥…Ñ¥½¹Ì‘¼¹½Ðµ…Ñ Ñ¡”¹½µ¥¹…°µÀµ•Ñ„µÉ•É•ÍÍ¥½¸É½ÝÌ¸ˆ¤)ô()±½Í½}Ù…±¥‘…Ñ¥½¹}Á…ÉÑÌ€ð´±¥ÍÐ ¤)±½Í½}¥Ñ•É…Ñ¥½¹}Á…ÉÑÌ€ð´±¥ÍÐ ¤()™½È€¡ÍÁ•Œ¥¸±½Í½}ÍÁ•Ì¤ì(€™Õ±±}™¥Ð€ð´™¥Ñ}±½Í½}Ñ…É•Ð¡ÍÁ•Œ‘‘…Ñ„°ÍÁ•Œ‘™½ÉµÕ±„°ÍÁ•Œ‘Ñ…É•Ñ}Ñ•É´¤(€¥˜€ …¥ÍQIU¡™Õ±±}™¥Ð‘½¬¤¤ì(€€€ÍÑ½À¡ÍÁÉ¥¹Ñ˜ (€€€€€€‰Õ±°µ½‘•°™…¥±•™½È€•Ìè€•Ìˆ°(€€€€€ÍÁ•Œ‘…¹…±åÍ¥Í}¥°(€€€€€™Õ±±}™¥Ð‘•ÉÉ½È(€€€€¤¤(€ô((€…¹½¹¥…±}É½Ü€ð´…¹½¹¥…±}¹½µ¥¹…°€”ø”(€€€™¥±Ñ•È (€€€€€ÍÑÉ…ÑÕ´€ôôÍÁ•Œ‘ÍÑÉ…ÑÕ´°(€€€€€µ½‘•É…Ñ½È€ôôÍÁ•Œ‘µ½‘•É…Ñ½È°(€€€€€½¹ÑÉ…ÍÐ€ôôÍÁ•Œ‘½¹ÑÉ…ÍÐ(€€€€¤(€¥˜€¡¹É½Ü¡…¹½¹¥…±}É½Ü¤€„ô€Ä¤ì(€€€ÍÑ½À¡ÍÁÉ¥¹Ñ˜ ‰…¹½¹¥…°É½Ü±½½­ÕÀ™…¥±•™½È€•Ì¸ˆ°ÍÁ•Œ‘…¹…±åÍ¥Í}¥¤¤(€ô((€±½Í½}Ù…±¥‘…Ñ¥½¹}Á…ÉÑÍmm±•¹Ñ ¡±½Í½}Ù…±¥‘…Ñ¥½¹}Á…ÉÑÌ¤€¬€Åut€ð´Ñ¥‰‰±” (€€€…¹…±åÍ¥Í}¥€ôÍÁ•Œ‘…¹…±åÍ¥Í}¥°(€€€ÍÑÉ…ÑÕ´€ôÍÁ•Œ‘ÍÑÉ…ÑÕ´°(€€€µ½‘•É…Ñ½È€ôÍÁ•Œ‘µ½‘•É…Ñ½È°(€€€½¹ÑÉ…ÍÐ€ôÍÁ•Œ‘½¹ÑÉ…ÍÐ°(€€€Ñ…É•Ñ}Ñ•É´€ôÍÁ•Œ‘Ñ…É•Ñ}Ñ•É´°(€€€•™™•ÑÌ€ô¹É½Ü¡ÍÁ•Œ‘‘…Ñ„¤°(€€€ÍÑÕ‘¥•Ì€ô¹}‘¥ÍÑ¥¹Ð¡ÍÁ•Œ‘‘…Ñ„‘ÍÑÕ‘å}¥¤°(€€€±ÕÍÑ•ÉÌ€ô¹}‘¥ÍÑ¥¹Ð¡ÍÁ•Œ‘‘…Ñ„‘‘•Á}¥¤°(€€€‰•Ñ…}É•½µÁÕÑ•€ô™Õ±±}™¥Ð‘‰•Ñ„°(€€€‰•Ñ…}…¹½¹¥…°€ô…¹½¹¥…±}É½Ü‘‰•Ñ„°(€€€‰•Ñ…}…‰Í}‘¥™˜€ô…‰Ì¡™Õ±±}™¥Ð‘‰•Ñ„€´…¹½¹¥…±}É½Ü‘‰•Ñ„¤°(€€€Í•}É•½µÁÕÑ•€ô™Õ±±}™¥Ð‘Í”°(€€€Í•}…¹½¹¥…°€ô…¹½¹¥…±}É½Ü‘Í”°(€€€Í•}…‰Í}‘¥™˜€ô…‰Ì¡™Õ±±}™¥Ð‘Í”€´…¹½¹¥…±}É½Ü‘Í”¤°(€€€‘™}É•½µÁÕÑ•€ô™Õ±±}™¥Ð‘‘˜°(€€€‘™}…¹½¹¥…°€ô…¹½¹¥…±}É½Ü‘‘˜°(€€€‘™}…‰Í}‘¥™˜€ô…‰Ì¡™Õ±±}™¥Ð‘‘˜€´…¹½¹¥…±}É½Ü‘‘˜¤°(€€€Á}É•½µÁÕÑ•€ô™Õ±±}™¥Ð‘Á}É…Ü°(€€€Á}…¹½¹¥…°€ô…¹½¹¥…±}É½Ü‘Á}É…Ü°(€€€Á}…‰Í}‘¥™˜€ô…‰Ì¡™Õ±±}™¥Ð‘Á}É…Ü€´…¹½¹¥…±}É½Ü‘Á}É…Ü¤°(€€€…¹½¹¥…±}¥¹Ñ•ÉÁÉ•Ñ…Ñ¥½¸€ô…¹½¹¥…±}É½Ü‘‘™}¥¹Ñ•ÉÁÉ•Ñ…Ñ¥½¸°(€€€Ñ…É•Ñ}±•Ù•±}ÍÑÕ‘¥•Ì€ôÍÁ•Œ‘Ñ…É•Ñ}±•Ù•±}ÍÑÕ‘¥•Ì°(€€€™Õ±±}µ½‘•±}Ý…É¹¥¹Ì€ô™Õ±±}™¥Ð‘Ý…É¹¥¹Ì(€€¤((€™½È€¡½µ¥ÑÑ•‘}ÍÑÕ‘ä¥¸Í½ÉÐ¡Õ¹¥ÅÕ”¡ÍÁ•Œ‘‘…Ñ„‘ÍÑÕ‘å}¥¤¤¤ì(€€€‘•±•Ñ¥½¹}‘…Ñ„€ð´ÍÁ•Œ‘‘…Ñ„€”ø”™¥±Ñ•È¡ÍÑÕ‘å}¥€„ô½µ¥ÑÑ•‘}ÍÑÕ‘ä¤(€€€‘•±•Ñ¥½¹}™¥Ð€ð´™¥Ñ}±½Í½}Ñ…É•Ð (€€€€€‘•±•Ñ¥½¹}‘…Ñ„°(€€€€€ÍÁ•Œ‘™½ÉµÕ±„°(€€€€€ÍÁ•Œ‘Ñ…É•Ñ}Ñ•É´(€€€€¤(€€€±½Í½}¥Ñ•É…Ñ¥½¹}Á…ÉÑÍmm±•¹Ñ ¡±½Í½}¥Ñ•É…Ñ¥½¹}Á…ÉÑÌ¤€¬€Åut€ð´Ñ¥‰‰±” (€€€€€…¹…±åÍ¥Í}¥€ôÍÁ•Œ‘…¹…±åÍ¥Í}¥°(€€€€€ÍÑÉ…ÑÕ´€ôÍÁ•Œ‘ÍÑÉ…ÑÕ´°(€€€€€µ½‘•É…Ñ½È€ôÍÁ•Œ‘µ½‘•É…Ñ½È°(€€€€€½¹ÑÉ…ÍÐ€ôÍÁ•Œ‘½¹ÑÉ…ÍÐ°(€€€€€½µ¥ÑÑ•‘}ÍÑÕ‘ä€ô½µ¥ÑÑ•‘}ÍÑÕ‘ä°(€€€€€É•µ½Ù•‘}•™™•ÑÌ€ôÍÕ´¡ÍÁ•Œ‘‘…Ñ„‘ÍÑÕ‘å}¥€ôô½µ¥ÑÑ•‘}ÍÑÕ‘ä¤°(€€€€€É•µ…¥¹¥¹}•™™•ÑÌ€ô¹É½Ü¡‘•±•Ñ¥½¹}‘…Ñ„¤°(€€€€€É•µ…¥¹¥¹}ÍÑÕ‘¥•Ì€ô¹}‘¥ÍÑ¥¹Ð¡‘•±•Ñ¥½¹}‘…Ñ„‘ÍÑÕ‘å}¥¤°(€€€€€É•µ…¥¹¥¹}±ÕÍÑ•ÉÌ€ô¹}‘¥ÍÑ¥¹Ð¡‘•±•Ñ¥½¹}‘…Ñ„‘‘•Á}¥¤°(€€€€€ÍÕ•ÍÍ™Õ°€ô‘•±•Ñ¥½¹}™¥Ð‘½¬°(€€€€€‰•Ñ„€ô‘•±•Ñ¥½¹}™¥Ð‘‰•Ñ„°(€€€€€Í”€ô‘•±•Ñ¥½¹}™¥Ð‘Í”°(€€€€€‘˜€ô‘•±•Ñ¥½¹}™¥Ð‘‘˜°(€€€€€Á}É…Ü€ô‘•±•Ñ¥½¹}™¥Ð‘Á}É…Ü°(€€€€€¹½µ¥¹…±}Á}±Ñ|Á|ÀÔ€ô¥™•±Í” (€€€€€€€‘•±•Ñ¥½¹}™¥Ð‘½¬°(€€€€€€€‘•±•Ñ¥½¹}™¥Ð‘Á}É…Ü€ð€À¸ÀÔ°(€€€€€€€9(€€€€€€¤°(€€€€€‘¥É•Ñ¥½¹}½¹Í¥ÍÑ•¹Ð€ô¥™•±Í” (€€€€€€€‘•±•Ñ¥½¹}™¥Ð‘½¬°(€€€€€€€Í¥¸¡‘•±•Ñ¥½¹}™¥Ð‘‰•Ñ„¤€ôôÍ¥¸¡™Õ±±}™¥Ð‘‰•Ñ„¤°(€€€€€€€9(€€€€€€¤°(€€€€€Ý…É¹¥¹Ì€ô‘•±•Ñ¥½¹}™¥Ð‘Ý…É¹¥¹Ì°(€€€€€™…¥±ÕÉ•}É•…Í½¸€ô‘•±•Ñ¥½¹}™¥Ð‘•ÉÉ½È(€€€€¤(€ô)ô()±½Í½}Ù…±¥‘…Ñ¥½¸€ð´‰¥¹‘}É½ÝÌ¡±½Í½}Ù…±¥‘…Ñ¥½¹}Á…ÉÑÌ¤)±½Í½}¥Ñ•É…Ñ¥½¹Ì€ð´‰¥¹‘}É½ÝÌ¡±½Í½}¥Ñ•É…Ñ¥½¹}Á…ÉÑÌ¤()Ù…±¥‘…Ñ¥½¹}Ñ½±•É…¹”€ð´€Å”´ÄÀ)¥˜€¡…¹ä (€±½Í½}Ù…±¥‘…Ñ¥½¸‘‰•Ñ…}…‰Í}‘¥™˜€øÙ…±¥‘…Ñ¥½¹}Ñ½±•É…¹”ð(€€€±½Í½}Ù…±¥‘…Ñ¥½¸‘Í•}…‰Í}‘¥™˜€øÙ…±¥‘…Ñ¥½¹}Ñ½±•É…¹”ð(€€€±½Í½}Ù…±¥‘…Ñ¥½¸‘‘™}…‰Í}‘¥™˜€øÙ…±¥‘…Ñ¥½¹}Ñ½±•É…¹”ð(€€€±½Í½}Ù…±¥‘…Ñ¥½¸‘Á}…‰Í}‘¥™˜€øÙ…±¥‘…Ñ¥½¹}Ñ½±•É…¹”(¤¤ì(€ÍÑ½À ‰Ð±•…ÍÐ½¹”1=M<™Õ±°µ½‘•°‘¥¹½Ðµ…Ñ Ñ¡”…¹½¹¥…°É•ÍÕ±Ð¸ˆ¤)ô()±½Í½}ÍÕµµ…Éä€ð´±½Í½}¥Ñ•É…Ñ¥½¹Ì€”ø”(€±•™Ñ}©½¥¸ (€€€±½Í½}Ù…±¥‘…Ñ¥½¸€”ø”(€€€€€Í•±•Ð (€€€€€€€…¹…±åÍ¥Í}¥°(€€€€€€€™Õ±±}‰•Ñ„€ô‰•Ñ…}É•½µÁÕÑ•°(€€€€€€€™Õ±±}Á}É…Ü€ôÁ}É•½µÁÕÑ•°(€€€€€€€…¹½¹¥…±}¥¹Ñ•ÉÁÉ•Ñ…Ñ¥½¸°(€€€€€€€Ñ…É•Ñ}±•Ù•±}ÍÑÕ‘¥•Ì(€€€€€€¤°(€€€‰ä€ô€‰…¹…±åÍ¥Í}¥ˆ(€€¤€”ø”(€É½ÕÁ}‰ä (€€€…¹…±åÍ¥Í}¥°ÍÑÉ…ÑÕ´°µ½‘•É…Ñ½È°½¹ÑÉ…ÍÐ°(€€€™Õ±±}‰•Ñ„°™Õ±±}Á}É…Ü°…¹½¹¥…±}¥¹Ñ•ÉÁÉ•Ñ…Ñ¥½¸°(€€€Ñ…É•Ñ}±•Ù•±}ÍÑÕ‘¥•Ì(€€¤€”ø”(€ÍÕµµ…É¥Í” (€€€Á±…¹¹•‘}¥Ñ•É…Ñ¥½¹Ì€ô¸ ¤°(€€€ÍÕ•ÍÍ™Õ±}¥Ñ•É…Ñ¥½¹Ì€ôÍÕ´¡ÍÕ•ÍÍ™Õ°¤°(€€€¹½¹}•ÍÑ¥µ…‰±•}¥Ñ•É…Ñ¥½¹Ì€ôÍÕ´ …ÍÕ•ÍÍ™Õ°¤°(€€€‘¥É•Ñ¥½¹}½¹Í¥ÍÑ•¹Ñ}¸€ôÍÕ´¡‘¥É•Ñ¥½¹}½¹Í¥ÍÑ•¹Ð°¹„¹É´€ôQIU¤°(€€€‘¥É•Ñ¥½¹}½¹Í¥ÍÑ•¹Ñ}‘•¹½µ¥¹…Ñ½È€ôÍÕ´¡ÍÕ•ÍÍ™Õ°¤°(€€€¹½µ¥¹…±}Á}±Ñ|Á|ÀÕ}¸€ôÍÕ´¡¹½µ¥¹…±}Á}±Ñ|Á|ÀÔ°¹„¹É´€ôQIU¤°(€€€¹½µ¥¹…±}Á}±Ñ|Á|ÀÕ}‘•¹½µ¥¹…Ñ½È€ôÍÕ´¡ÍÕ•ÍÍ™Õ°¤°(€€€‰•Ñ…}µ¥¸€ô¥™•±Í”¡…¹ä¡ÍÕ•ÍÍ™Õ°¤°µ¥¸¡‰•Ñ…mÍÕ•ÍÍ™Õ±t¤°9}É•…±|¤°(€€€‰•Ñ…}µ…à€ô¥™•±Í”¡…¹ä¡ÍÕ•ÍÍ™Õ°¤°µ…à¡‰•Ñ…mÍÕ•ÍÍ™Õ±t¤°9}É•…±|¤°(€€€Á}É…Ý}µ¥¸€ô¥™•±Í”¡…¹ä¡ÍÕ•ÍÍ™Õ°¤°µ¥¸¡Á}É…ÝmÍÕ•ÍÍ™Õ±t¤°9}É•…±|¤°(€€€Á}É…Ý}µ…à€ô¥™•±Í”¡…¹ä¡ÍÕ•ÍÍ™Õ°¤°µ…à¡Á}É…ÝmÍÕ•ÍÍ™Õ±t¤°9}É•…±|¤°(€€€¹½¹}•ÍÑ¥µ…‰±•}ÍÑÕ‘¥•Ì€ôÁ…ÍÑ”¡½µ¥ÑÑ•‘}ÍÑÕ‘ål…ÍÕ•ÍÍ™Õ±t°½±±…ÁÍ”€ô€ˆìˆ¤°(€€€™…¥±ÕÉ•}É•…Í½¹Ì€ôÁ…ÍÑ”¡Õ¹¥ÅÕ”¡™…¥±ÕÉ•}É•…Í½¹l…ÍÕ•ÍÍ™Õ±t¤°½±±…ÁÍ”€ô€ˆð€ˆ¤°(€€€Ý…É¹¥¹}¥Ñ•É…Ñ¥½¹Ì€ôÍÕ´¡Ý…É¹¥¹Ì€„ô€ˆˆ¤°(€€€€¹É½ÕÁÌ€ô€‰‘É½Àˆ(€€¤()ÝÉ¥Ñ•}ÍØ (€±½Í½}¥Ñ•É…Ñ¥½¹Ì°(€™¥±”¹Á…Ñ ¡½ÕÑ}‘¥È°€‰±½Í½}¹½µ¥¹…±}µ½‘•É…Ñ½É}¥Ñ•É…Ñ¥½¹Ì¹ÍØˆ¤(¤)ÝÉ¥Ñ•}ÍØ (€±½Í½}ÍÕµµ…Éä°(€™¥±”¹Á…Ñ ¡½ÕÑ}‘¥È°€‰±½Í½}¹½µ¥¹…±}µ½‘•É…Ñ½É}ÍÕµµ…Éä¹ÍØˆ¤(¤)ÝÉ¥Ñ•}ÍØ (€±½Í½}Ù…±¥‘…Ñ¥½¸°(€™¥±”¹Á…Ñ ¡½ÕÑ}‘¥È°€‰±½Í½}¹½µ¥¹…±}µ½‘•É…Ñ½É}Ù…±¥‘…Ñ¥½¸¹ÍØˆ¤(¤((ŒŒ½ÕÍ•±•…Ù”µ½¹”µ…‰ÍÑÉ…ÐµÍÑÕ‘äµ½ÕÐ¡•­Ì™½ÈÑ¡”¥¹Ñ•ÈµÉ•…‘•È(ŒŒÁÕ‰±¥…Ñ¥½¸µÑåÁ”½¹ÑÉ…ÍÐ¸Q¡•Í”…É”Í•Á…É…Ñ”™É½´Ñ¡”¹½µ¥¹…°µÀÍ•Ð…‰½Ù”(ŒŒ‰•…ÕÍ”Ñ¡”™Õ±°¥¹Ñ•ÈµÉ•…‘•ÈÁÕ‰±¥…Ñ¥½¸µÑåÁ”½¹ÑÉ…ÍÐ¡…ÀôÀ¸ÈÜÈ¸()ÁÕ‰±¥…Ñ¥½¹}¡•­}Á…ÉÑÌ€ð´±¥ÍÐ ¤)ÁÕ‰±¥…Ñ¥½¹}¡•­}ÍÁ•Ì€ð´Œ ‰Õ±°µ½‘•°ˆ°Í½ÉÐ¡Õ¹¥ÅÕ” (€¥É}ÁÕ‰±¥…Ñ¥½¸‘ÍÑÕ‘å}¥‘m¥É}ÁÕ‰±¥…Ñ¥½¸‘¥Í}…‰ÍÑÉ…Ð€ôô€Åt(¤¤¤()™½È€¡¡•­}±…‰•°¥¸ÁÕ‰±¥…Ñ¥½¹}¡•­}ÍÁ•Ì¤ì(€½µ¥ÑÑ•‘}ÍÑÕ‘ä€ð´¥˜€¡¡•­}±…‰•°€ôô€‰Õ±°µ½‘•°ˆ¤9}¡…É…Ñ•É|•±Í”¡•­}±…‰•°(€¡•­}‘…Ñ„€ð´¥˜€¡¥Ì¹¹„¡½µ¥ÑÑ•‘}ÍÑÕ‘ä¤¤ì(€€€¥É}ÁÕ‰±¥…Ñ¥½¸(€ô•±Í”ì(€€€¥É}ÁÕ‰±¥…Ñ¥½¸€”ø”™¥±Ñ•È¡ÍÑÕ‘å}¥€„ô½µ¥ÑÑ•‘}ÍÑÕ‘ä¤(€ô(€¡•­}™¥Ð€ð´™¥Ñ}±½Í½}Ñ…É•Ð (€€€¡•­}‘…Ñ„°(€€€å¥}èø¥Í}…‰ÍÑÉ…Ð°(€€€€‰¥Í}…‰ÍÑÉ…Ðˆ(€€¤(€…‰ÍÑÉ…Ñ}‘…Ñ„€ð´¡•­}‘…Ñ„€”ø”™¥±Ñ•È¡¥Í}…‰ÍÑÉ…Ð€ôô€Ä¤(€…‰ÍÑÉ…Ñ}ÍÑÕ‘¥•Ì€ð´¹}‘¥ÍÑ¥¹Ð¡…‰ÍÑÉ…Ñ}‘…Ñ„‘ÍÑÕ‘å}¥¤(€…‰ÍÑÉ…Ñ}±ÕÍÑ•ÉÌ€ð´¹}‘¥ÍÑ¥¹Ð¡…‰ÍÑÉ…Ñ}‘…Ñ„‘‘•Á}¥¤(€ÁÕ‰±¥…Ñ¥½¹}¡•­}Á…ÉÑÍmm±•¹Ñ ¡ÁÕ‰±¥…Ñ¥½¹}¡•­}Á…ÉÑÌ¤€¬€Åut€ð´Ñ¥‰‰±” (€€€…¹…±åÍ¥Ì€ô¡•­}±…‰•°°(€€€½µ¥ÑÑ•‘}ÍÑÕ‘ä€ô½µ¥ÑÑ•‘}ÍÑÕ‘ä°(€€€•™™•ÑÌ€ô¹É½Ü¡¡•­}‘…Ñ„¤°(€€€ÍÑÕ‘¥•Ì€ô¹}‘¥ÍÑ¥¹Ð¡¡•­}‘…Ñ„‘ÍÑÕ‘å}¥¤°(€€€±ÕÍÑ•ÉÌ€ô¹}‘¥ÍÑ¥¹Ð¡¡•­}‘…Ñ„‘‘•Á}¥¤°(€€€…‰ÍÑÉ…Ñ}•™™•ÑÌ€ô¹É½Ü¡…‰ÍÑÉ…Ñ}‘…Ñ„¤°(€€€…‰ÍÑÉ…Ñ}ÍÑÕ‘¥•Ì€ô…‰ÍÑÉ…Ñ}ÍÑÕ‘¥•Ì°(€€€…‰ÍÑÉ…Ñ}±ÕÍÑ•ÉÌ€ô…‰ÍÑÉ…Ñ}±ÕÍÑ•ÉÌ°(€€€ÍÕ•ÍÍ™Õ°€ô¡•­}™¥Ð‘½¬°(€€€‰•Ñ„€ô¡•­}™¥Ð‘‰•Ñ„°(€€€Í”€ô¡•­}™¥Ð‘Í”°(€€€‘˜€ô¡•­}™¥Ð‘‘˜°(€€€Á}É…Ü€ô¡•­}™¥Ð‘Á}É…Ü°(€€€¥¹Ñ•ÉÁÉ•Ñ…Ñ¥½¸€ô…Í•}Ý¡•¸ (€€€€€€…¡•­}™¥Ð‘½¬ø€‰9½¸µ•ÍÑ¥µ…‰±”ˆ°(€€€€€…‰ÍÑÉ…Ñ}ÍÑÕ‘¥•Ì€ð€Èñð…‰ÍÑÉ…Ñ}±ÕÍÑ•ÉÌ€ð€Èø(€€€€€€€€‰9½¸µ¥¹Ñ•ÉÁÉ•Ñ…‰±”€¡Í¥¹±•Ñ½¸…‰ÍÑÉ…Ð±•Ù•°¤ˆ°(€€€€€¡•­}™¥Ð‘‘˜€ð€Ðø€‰9½¸µ¥¹Ñ•ÉÁÉ•Ñ…‰±”€¡‘˜ðÐ¤ˆ°(€€€€€¡•­}™¥Ð‘‘˜€ð€ÄÀø€‰É…¥±”€¡‘˜€Ð´ðÄÀ¤ˆ°(€€€€€QIUø€‰áÁ±½É…Ñ½Éäˆ(€€€€¤°(€€€Ý…É¹¥¹Ì€ô¡•­}™¥Ð‘Ý…É¹¥¹Ì°(€€€™…¥±ÕÉ•}É•…Í½¸€ô¡•­}™¥Ð‘•ÉÉ½È(€€¤)ô()¥¹Ñ•É}É•…‘•É}ÁÕ‰±¥…Ñ¥½¹}¡•­Ì€ð´‰¥¹‘}É½ÝÌ¡ÁÕ‰±¥…Ñ¥½¹}¡•­}Á…ÉÑÌ¤)ÝÉ¥Ñ•}ÍØ (€¥¹Ñ•É}É•…‘•É}ÁÕ‰±¥…Ñ¥½¹}¡•­Ì°(€™¥±”¹Á…Ñ ¡½ÕÑ}‘¥È°€‰¥¹Ñ•É}É•…‘•É}ÁÕ‰±¥…Ñ¥½¹}ÑåÁ•}±•…Ù•}½¹•}…‰ÍÑÉ…Ð¹ÍØˆ¤(¤()…Ð ‰q¹9½µ¥¹…°µÀµ½‘•É…Ñ½È±•…Ù”µ½¹”µÍÑÕ‘äµ½ÕÐÍÕµµ…Éåq¸ˆ¤)ÁÉ¥¹Ð¡±½Í½}ÍÕµµ…Éä°¸€ô%¹˜°Ý¥‘Ñ €ô%¹˜¤)…Ð ‰q¹%¹Ñ•ÈµÉ•…‘•ÈÁÕ‰±¥…Ñ¥½¸µÑåÁ”±•…Ù”µ½¹”µ…‰ÍÑÉ…Ð¡•­Íq¸ˆ¤)ÁÉ¥¹Ð¡¥¹Ñ•É}É•…‘•É}ÁÕ‰±¥…Ñ¥½¹}¡•­Ì°¸€ô%¹˜°Ý¥‘Ñ €ô%¹˜¤

@@ -26,7 +26,9 @@ Each row is an extracted agreement comparison.
 - `has_raw_table`, `metric_note`: whether a cross-tabulation was available and
   relevant metric provenance.
 - `exclude`: non-empty values identify records excluded from the analysis and
-  give the exclusion reason.
+  give the exclusion reason. The value `not_inter_reader_agreement` identifies
+  reader-specific diagnostic-agreement values that are not inter-reader
+  reliability estimates.
 - `variation_axis`, `sensitivity_flags`: comparison structure and sensitivity
   analysis flags.
 - `dep_id`: dependency cluster used for robust variance estimation.
@@ -59,6 +61,24 @@ and is linked to the other data files by `study_id`.
 Not Applicable, and missing counts for each domain, together with the
 all-study and applicable-study denominators and percentages.
 
+## Revision analysis outputs
+
+- `loso_nominal_moderator_iterations.csv` contains one row for every planned
+  leave-one-study-out deletion for the eight moderator contrasts with nominal
+  p<0.05. It records model estimability, the omitted study, the coefficient,
+  standard error, Satterthwaite degrees of freedom, raw p value, coefficient
+  direction, and warnings or failure reason.
+- `loso_nominal_moderator_summary.csv` summarizes the successful and
+  non-estimable deletion models, direction consistency, nominal p<0.05 counts,
+  and coefficient and p-value ranges for each of the eight contrasts.
+- `loso_nominal_moderator_validation.csv` verifies that every recomputed full
+  model matches its row in `meta_regression_revision.csv` before the deletion
+  analyses are run.
+- `inter_reader_publication_type_leave_one_abstract.csv` contains the full
+  inter-reader publication-type model and the two focused checks omitting each
+  abstract study in turn, with singleton abstract levels identified as
+  non-interpretable.
+
 ## Analytic conventions
 
 - Records are analytically active when `exclude` is empty.
@@ -71,4 +91,5 @@ all-study and applicable-study denominators and percentages.
 - Primary sufficiently populated strata use multilevel random-effects models
   with cluster-robust variance estimation and CR2 small-sample correction.
 - Sparse strata use the `opes_*` hierarchy to select one representative
-  estimate per study.
+  estimate per study. The analysis stops if any eligible study-stratum has
+  zero or more than one selected estimate.
