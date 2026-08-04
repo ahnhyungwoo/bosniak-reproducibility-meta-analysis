@@ -332,6 +332,39 @@ cat(paste(rep("=", 70), collapse = ""), "\n")
 dat_kappa <- dat %>% filter(stat_type == "kappa")
 cat(sprintf("\nKappa-only: %d effects\n", nrow(dat_kappa)))
 
+validate_opes_selection <- function(data) {
+  audit <- data %>%
+    filter(analytic_stratum %in% c(
+      "inter-reader", "inter-modality", "intra-reader", "inter-version"
+    )) %>%
+    group_by(analytic_stratum, study_id) %>%
+    summarise(
+      selected_effects = sum(opes_include == 1, na.rm = TRUE),
+      selected_clusters = n_distinct(
+        dep_id[coalesce(opes_include == 1, FALSE)], na.rm = TRUE
+      ),
+      .groups = "drop"
+    )
+
+  invalid <- audit %>%
+    filter(selected_effects != 1 | selected_clusters != 1)
+  if (nrow(invalid) > 0) {
+    details <- paste(
+      sprintf(
+        "%s/%s: effects=%d, clusters=%d",
+        invalid$analytic_stratum,
+        invalid$study_id,
+        invalid$selected_effects,
+        invalid$selected_clusters
+      ),
+      collapse = "; "
+    )
+    stop("Invalid one-per-study estimate selection: ", details)
+  }
+}
+
+validate_opes_selection(dat_kappa)
+
 # --- Inter-reader ---
 ir_k <- dat_kappa %>% filter(analytic_stratum == "inter-reader")
 ir_res <- run_rve_cr2(ir_k, "Inter-reader PRIMARY (kappa-only)")

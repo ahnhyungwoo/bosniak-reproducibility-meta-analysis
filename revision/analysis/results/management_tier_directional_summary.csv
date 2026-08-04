@@ -1,10 +1,10 @@
 study_id,comparison,reader,n_lesions,lower_lower,lower_higher,higher_lower,higher_higher,observed_agreement,kappa,ac1,ceus_higher_than_ct,ceus_lower_than_ct,net_ceus_higher,notes
-Ascenti_2007,CT vs CEUS,,44,29,0,0,15,1.000,1.000,,0,0,0,Management boundary I-II-IIF vs III-IV; perfectly concordant
+Ascenti_2007,CT vs CEUS,,44,29,0,0,15,1.000,1.000,1.000,0,0,0,Management boundary I-II-IIF vs III-IV; perfectly concordant
 Clevert_2008,CT vs CEUS,,37,20,2,0,15,0.946,0.890,0.894,2,0,2,Management boundary below III vs III-IV
 Foukal_2014,CT vs CEUS,,112,89,9,2,12,0.902,0.630,0.867,9,2,7,CEUS rows in source table; boundary nonsurgical vs surgical
 Das_2023,CT vs CEUS,,40,16,6,1,17,0.825,0.655,0.650,6,1,5,Reconstructed from discordant-lesion table
 Sanz_2016,CT vs CEUS,,66,38,7,1,20,0.879,0.740,0.774,7,1,6,Table denominator 66 although study reports 67 lesions
-Ragel_2016,CT vs CEUS,Observer 1,51,42,0,4,5,0.922,0.673,,0,4,-4,Direction strongly reader-dependent; same lesions as observer 2
-Ragel_2016,CT vs CEUS,Observer 2,51,22,2,19,8,0.588,0.205,,2,19,-17,Direction strongly reader-dependent; same lesions as observer 1
-Ignee_2010,CT vs CEUS,,10,0,2,0,8,0.800,0.000,0.756,2,0,2,Degenerate marginal; kappa is not informative
-Park_2007,CT vs CEUS,,31,0,5,0,26,0.839,0.000,0.811,5,0,5,Degenerate marginal; kappa is not informative
+Ragel_2016,CT vs CEUS,Observer 1,51,42,0,4,5,0.922,0.673,0.897,0,4,-4,Same lesions as observer 2
+Ragel_2016,CT vs CEUS,Observer 2,51,22,2,19,8,0.588,0.205,0.234,2,19,-17,Same lesions as observer 1
+Ignee_2010,CT vs CEUS,,10,0,2,0,8,0.800,0.000,0.756,2,0,2,CEUS assigned all lesions to the higher tier
+Park_2007,CT vs CEUS,,31,0,5,0,26,0.839,0.000,0.811,5,0,5,CEUS assigned all lesions to the higher tier

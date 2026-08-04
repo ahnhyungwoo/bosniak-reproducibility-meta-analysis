@@ -10,6 +10,8 @@ library(clubSandwich)
 library(dplyr)
 library(readr)
 
+DPI <- 300
+
 script_arg <- grep("^--file=", commandArgs(), value = TRUE)
 if (length(script_arg) == 0) stop("Run this file with Rscript.")
 script_dir <- dirname(normalizePath(sub("^--file=", "", script_arg[1]), winslash = "/"))
@@ -161,7 +163,14 @@ make_subgroup_forest <- function(opes_data, group_var, group_order, group_labels
     if (ext == "pdf") {
       pdf(fname, width = fig_width, height = fig_height)
     } else {
-      png(fname, width = fig_width * 250, height = fig_height * 250, res = 250)
+      png(
+        fname,
+        width = fig_width * DPI,
+        height = fig_height * DPI,
+        res = DPI,
+        type = "cairo",
+        family = "Arial"
+      )
     }
 
     par(mar = c(4, 0, 1.5, 1), cex = cex_val, bg = "white")

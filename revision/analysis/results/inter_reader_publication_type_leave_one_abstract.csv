@@ -1,0 +1,4 @@
+analysis,omitted_study,effects,studies,clusters,abstract_effects,abstract_studies,abstract_clusters,successful,beta,se,df,p_raw,interpretation,warnings,failure_reason
+Full model,NA,175,47,52,4,2,2,TRUE,0.5491467493009572,0.2623068778852624,1.074168592359262,0.26991843722578673,Non-interpretable (df<4),,
+Chang_2015,Chang_2015,174,46,51,3,1,1,TRUE,0.32690341313088167,0.057458659785443324,48.06727124584787,7.419554543347207e-7,Non-interpretable (singleton abstract level),,
+Verzotti_2019,Verzotti_2019,172,46,51,1,1,1,TRUE,0.8438888354396835,0.05747511935740413,48.05937692212696,2.1727838195227045e-19,Non-interpretable (singleton abstract level),,

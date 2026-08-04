@@ -8,6 +8,8 @@ library(metafor)
 library(dplyr)
 library(readr)
 
+DPI <- 300
+
 script_arg <- grep("^--file=", commandArgs(), value = TRUE)
 if (length(script_arg) == 0) stop("Run this file with Rscript.")
 script_dir <- dirname(normalizePath(sub("^--file=", "", script_arg[1]), winslash = "/"))
@@ -57,7 +59,14 @@ make_funnel <- function(model, title, file_prefix, ylim_max = NULL, steps = 5) {
     if (ext == "pdf") {
       pdf(fname, width = 7, height = 6)
     } else {
-      png(fname, width = 7*250, height = 6*250, res = 250)
+      png(
+        fname,
+        width = 7 * DPI,
+        height = 6 * DPI,
+        res = DPI,
+        type = "cairo",
+        family = "Arial"
+      )
     }
     par(mar = c(4.5, 4.5, 2, 1), bg = "white")
     funnel(model,

@@ -6,6 +6,6 @@ inter-modality,unweighted,26,21,23
 inter-modality,weighted_unspecified,5,3,4
 inter-reader,linear,18,8,8
 inter-reader,quadratic,18,5,5
-inter-reader,unspecified,43,9,12
+inter-reader,unspecified,40,9,12
 inter-reader,unweighted,50,15,15
 inter-reader,weighted_unspecified,49,13,15

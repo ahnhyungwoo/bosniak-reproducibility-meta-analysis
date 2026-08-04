@@ -1,0 +1,37 @@
+section,level,region_display,region_effects,count,percent
+Bosniak version,Non-2019,North America,75,34,45
+Bosniak version,2019 update,North America,75,41,55
+Bosniak version,Non-2019,Asia,51,25,49
+Bosniak version,2019 update,Asia,51,26,51
+Bosniak version,Non-2019,Europe,33,30,91
+Bosniak version,2019 update,Europe,33,3,9
+Bosniak version,Non-2019,Other/unspecified region,16,10,62
+Bosniak version,2019 update,Other/unspecified region,16,6,38
+Imaging modality,CT,North America,75,19,25
+Imaging modality,MRI,North America,75,14,19
+Imaging modality,CEUS/US,North America,75,8,11
+Imaging modality,CT/MRI,North America,75,16,21
+Imaging modality,Mixed/not reported,North America,75,18,24
+Imaging modality,CT,Asia,51,16,31
+Imaging modality,MRI,Asia,51,23,45
+Imaging modality,CEUS/US,Asia,51,12,24
+Imaging modality,CT/MRI,Asia,51,0,0
+Imaging modality,Mixed/not reported,Asia,51,0,0
+Imaging modality,CT,Europe,33,15,45
+Imaging modality,MRI,Europe,33,2,6
+Imaging modality,CEUS/US,Europe,33,14,42
+Imaging modality,CT/MRI,Europe,33,2,6
+Imaging modality,Mixed/not reported,Europe,33,0,0
+Imaging modality,CT,Other/unspecified region,16,7,44
+Imaging modality,MRI,Other/unspecified region,16,7,44
+Imaging modality,CEUS/US,Other/unspecified region,16,1,6
+Imaging modality,CT/MRI,Other/unspecified region,16,1,6
+Imaging modality,Mixed/not reported,Other/unspecified region,16,0,0
+Publication type,Journal article,North America,75,75,100
+Publication type,Conference abstract,North America,75,0,0
+Publication type,Journal article,Asia,51,51,100
+Publication type,Conference abstract,Asia,51,0,0
+Publication type,Journal article,Europe,33,30,91
+Publication type,Conference abstract,Europe,33,3,9
+Publication type,Journal article,Other/unspecified region,16,15,94
+Publication type,Conference abstract,Other/unspecified region,16,1,6

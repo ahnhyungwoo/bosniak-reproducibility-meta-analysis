@@ -31,7 +31,7 @@ inter-reader,Lucocq_2021,Lucocq,2021,journal_article,2,kappa,2,1,Included in pri
 inter-reader,Osman_2021,Osman,2021,journal_article,4,kappa,4,1,Included in primary all-eligible-kappa RVE+CR2 model
 inter-reader,Park_2021,Park,2021,journal_article,4,kappa,4,1,Included in primary all-eligible-kappa RVE+CR2 model
 inter-reader,Tse_2021_a,Tse,2021,journal_article,2,kappa,2,1,Included in primary all-eligible-kappa RVE+CR2 model
-inter-reader,Tse_2021_b,Tse,2021,journal_article,16,kappa,16,2,Included in primary all-eligible-kappa RVE+CR2 model
+inter-reader,Tse_2021_b,Tse,2021,journal_article,16,kappa,16,1,Included in primary all-eligible-kappa RVE+CR2 model
 inter-reader,Yan_2021,Yan,2021,journal_article,24,kappa,24,1,Included in primary all-eligible-kappa RVE+CR2 model
 inter-reader,Arita_2022,Arita,2022,journal_article,3,kappa,3,1,Included in primary all-eligible-kappa RVE+CR2 model
 inter-reader,Kang_2022,Kang,2022,journal_article,2,kappa,2,1,Included in primary all-eligible-kappa RVE+CR2 model
@@ -51,7 +51,7 @@ inter-reader,Kang_2025,Kang,2025,journal_article,5,kappa,5,1,Included in primary
 inter-reader,He_2026,He,2026,journal_article,6,kappa,6,1,Included in primary all-eligible-kappa RVE+CR2 model
 inter-reader,Jin_2026,Jin,2026,journal_article,1,Gwet AC1,0,0,Excluded from kappa pooling: only non-kappa metric(s) reported
 inter-reader,Sebastià_2026,Sebastià,2026,journal_article,1,kappa,1,1,Included in primary all-eligible-kappa RVE+CR2 model
-inter-reader,Urraro_2026,Urraro,2026,journal_article,4,kappa,4,0,Included in primary all-eligible-kappa RVE+CR2 model
+inter-reader,Urraro_2026,Urraro,2026,journal_article,1,kappa,1,1,Included in primary all-eligible-kappa RVE+CR2 model
 inter-modality,Bielsa_Gali_1999,Bielsa Gali,1999,original article,1,kappa,1,1,Included in primary all-eligible-kappa RVE+CR2 model
 inter-modality,Israel_2004,Israel,2004,journal_article,1,kappa,1,1,Included in primary all-eligible-kappa RVE+CR2 model
 inter-modality,Ascenti_2007,Ascenti,2007,journal_article,1,kappa,1,1,Included in primary all-eligible-kappa RVE+CR2 model

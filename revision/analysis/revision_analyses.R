@@ -1,7 +1,7 @@
 ## Bosniak reproducibility major-revision analyses
 ##
-## This script leaves the submitted datasets unchanged and writes all
-## reviewer-requested outputs under revision/analysis/results.
+## This script leaves the submitted datasets unchanged and writes the
+## additional analysis outputs under revision/analysis/results.
 
 script_arg <- grep("^--file=", commandArgs(), value = TRUE)
 if (length(script_arg) == 0) {
@@ -9,6 +9,10 @@ if (length(script_arg) == 0) {
 }
 script_path <- normalizePath(sub("^--file=", "", script_arg[1]), winslash = "/")
 project_dir <- normalizePath(file.path(dirname(script_path), "../.."), winslash = "/")
+local_lib <- file.path(project_dir, "revision", "R_lib")
+if (dir.exists(local_lib)) {
+  .libPaths(c(local_lib, .libPaths()))
+}
 
 suppressPackageStartupMessages({
   library(metafor)
@@ -230,6 +234,117 @@ ir <- dat %>% filter(analytic_stratum == "inter-reader")
 im <- dat %>% filter(analytic_stratum == "inter-modality")
 intra <- dat %>% filter(analytic_stratum == "intra-reader")
 iv <- dat %>% filter(analytic_stratum == "inter-version")
+
+validate_opes_selection <- function(data) {
+  audit <- data %>%
+    filter(analytic_stratum %in% c(
+      "inter-reader", "inter-modality", "intra-reader", "inter-version"
+    )) %>%
+    group_by(analytic_stratum, study_id) %>%
+    summarise(
+      selected_effects = sum(opes_include == 1, na.rm = TRUE),
+      selected_clusters = n_distinct(
+        dep_id[coalesce(opes_include == 1, FALSE)], na.rm = TRUE
+      ),
+      .groups = "drop"
+    )
+
+  invalid <- audit %>%
+    filter(selected_effects != 1 | selected_clusters != 1)
+  if (nrow(invalid) > 0) {
+    details <- paste(
+      sprintf(
+        "%s/%s: effects=%d, clusters=%d",
+        invalid$analytic_stratum,
+        invalid$study_id,
+        invalid$selected_effects,
+        invalid$selected_clusters
+      ),
+      collapse = "; "
+    )
+    stop("Invalid one-per-study estimate selection: ", details)
+  }
+}
+
+validate_opes_selection(dat)
+
+region_levels <- c("North America", "Asia", "Europe", "Other/unspecified region")
+ir_region_data <- ir %>%
+  mutate(
+    region_display = case_when(
+      region == "North_America" ~ "North America",
+      region == "Asia" ~ "Asia",
+      region == "Europe" ~ "Europe",
+      TRUE ~ "Other/unspecified region"
+    ),
+    version_display = if_else(
+      !is.na(std_version_1) & std_version_1 == "v2019",
+      "2019 update",
+      "Non-2019"
+    ),
+    modality_display = case_when(
+      std_modality_1 == "CT" ~ "CT",
+      std_modality_1 == "MRI" ~ "MRI",
+      std_modality_1 %in% c("CEUS", "US", "SMI") ~ "CEUS/US",
+      std_modality_1 == "CT_MRI" ~ "CT/MRI",
+      TRUE ~ "Mixed/not reported"
+    ),
+    publication_display = if_else(
+      publication_type == "conference_abstract",
+      "Conference abstract",
+      "Journal article"
+    )
+  )
+
+complete_region_counts <- function(data, section, variable, level_order) {
+  observed <- data %>%
+    count(region_display, level = .data[[variable]], name = "count")
+  grid <- as_tibble(expand.grid(
+    region_display = region_levels,
+    level = level_order,
+    stringsAsFactors = FALSE
+  ))
+  totals <- data %>% count(region_display, name = "region_effects")
+
+  grid %>%
+    left_join(observed, by = c("region_display", "level")) %>%
+    left_join(totals, by = "region_display") %>%
+    mutate(
+      section = section,
+      count = coalesce(count, 0L),
+      percent = round(100 * count / region_effects),
+      region_order = match(region_display, region_levels),
+      level_order = match(level, level_order)
+    ) %>%
+    arrange(region_order, level_order) %>%
+    select(section, level, region_display, region_effects, count, percent)
+}
+
+inter_reader_region_distribution <- bind_rows(
+  complete_region_counts(
+    ir_region_data,
+    "Bosniak version",
+    "version_display",
+    c("Non-2019", "2019 update")
+  ),
+  complete_region_counts(
+    ir_region_data,
+    "Imaging modality",
+    "modality_display",
+    c("CT", "MRI", "CEUS/US", "CT/MRI", "Mixed/not reported")
+  ),
+  complete_region_counts(
+    ir_region_data,
+    "Publication type",
+    "publication_display",
+    c("Journal article", "Conference abstract")
+  )
+)
+
+write_csv(
+  inter_reader_region_distribution,
+  file.path(out_dir, "inter_reader_region_distribution.csv")
+)
 
 safe_tcrit <- function(df) {
   ifelse(is.finite(df) & df > 0, qt(0.975, df), qnorm(0.975))
@@ -1296,3 +1411,383 @@ cat("\nMatched version comparison\n")
 print(matched_version_summary, n = Inf, width = Inf)
 cat("\nMeta-regression results with BH-FDR\n")
 print(meta_regression_results, n = Inf, width = Inf)
+
+## Leave-one-study-out checks for every moderator contrast meeting the
+## protocol's nominal p<0.05 threshold. The full models are first checked
+## against meta_regression_results so that the deletion analyses cannot drift
+## from the reported model definitions.
+
+fit_loso_target <- function(data, formula, target_term) {
+  captured_warnings <- character()
+  tryCatch(
+    withCallingHandlers({
+      if (nrow(data) < 3 || n_distinct(data$dep_id) < 3) {
+        stop("fewer than three effects or dependency clusters")
+      }
+      model <- rma.mv(
+        formula,
+        V = data$vi_z,
+        random = list(~ 1 | dep_id, ~ 1 | comparison_id),
+        data = data,
+        method = "REML"
+      )
+      robust <- coef_test(model, vcov = "CR2", cluster = data$dep_id)
+      robust_df <- as.data.frame(robust)
+      robust_df$term <- rownames(robust_df)
+      target <- robust_df[robust_df$term == target_term, , drop = FALSE]
+      if (nrow(target) != 1) {
+        stop(sprintf("target term '%s' was not estimable", target_term))
+      }
+      if (!all(is.finite(c(
+        target$beta, target$SE, target$df_Satt, target$p_Satt
+      )))) {
+        stop(sprintf("target term '%s' had non-finite CR2 output", target_term))
+      }
+      list(
+        ok = TRUE,
+        beta = as.numeric(target$beta),
+        se = as.numeric(target$SE),
+        df = as.numeric(target$df_Satt),
+        p_raw = as.numeric(target$p_Satt),
+        warnings = paste(unique(captured_warnings), collapse = " | "),
+        error = ""
+      )
+    }, warning = function(w) {
+      captured_warnings <<- c(captured_warnings, conditionMessage(w))
+      invokeRestart("muffleWarning")
+    }),
+    error = function(e) {
+      list(
+        ok = FALSE,
+        beta = NA_real_,
+        se = NA_real_,
+        df = NA_real_,
+        p_raw = NA_real_,
+        warnings = paste(unique(captured_warnings), collapse = " | "),
+        error = conditionMessage(e)
+      )
+    }
+  )
+}
+
+loso_specs <- list(
+  list(
+    analysis_id = "IR_blinding_reported",
+    stratum = "Inter-reader",
+    moderator = "Blinding reported",
+    contrast = "Reported vs not reported",
+    data = ir_blinding,
+    formula = yi_z ~ blinding_reported_binary,
+    target_term = "blinding_reported_binary",
+    target_level_studies = NA_character_
+  ),
+  list(
+    analysis_id = "IR_region_Europe_vs_North_America",
+    stratum = "Inter-reader",
+    moderator = "Region",
+    contrast = "Europe vs North America",
+    data = ir_region,
+    formula = yi_z ~ region_factor,
+    target_term = "region_factorEurope",
+    target_level_studies = NA_character_
+  ),
+  list(
+    analysis_id = "IM_categories_4_5_vs_2_3",
+    stratum = "Inter-modality",
+    moderator = "No. of categories",
+    contrast = "4-5 vs 2-3",
+    data = im_ncat,
+    formula = yi_z ~ is_full,
+    target_term = "is_full",
+    target_level_studies = NA_character_
+  ),
+  list(
+    analysis_id = "IM_modality_pair_CT_US_vs_CT_MRI",
+    stratum = "Inter-modality",
+    moderator = "Modality pair",
+    contrast = "CT-US-based vs CT-MRI",
+    data = im_pair,
+    formula = yi_z ~ pair_factor,
+    target_term = "pair_factorCT_CEUS_US",
+    target_level_studies = NA_character_
+  ),
+  list(
+    analysis_id = "IM_log_sample_size",
+    stratum = "Inter-modality",
+    moderator = "log(sample size)",
+    contrast = "log_nc",
+    data = im %>% filter(!is.na(log_nc)),
+    formula = yi_z ~ log_nc,
+    target_term = "log_nc",
+    target_level_studies = NA_character_
+  ),
+  list(
+    analysis_id = "IM_publication_type_abstract_vs_fulltext",
+    stratum = "Inter-modality",
+    moderator = "Publication type",
+    contrast = "Abstract vs full text",
+    data = im_publication,
+    formula = yi_z ~ is_abstract,
+    target_term = "is_abstract",
+    target_level_studies = paste(
+      sort(unique(im_publication$study_id[im_publication$is_abstract == 1])),
+      collapse = ";"
+    )
+  ),
+  list(
+    analysis_id = "IM_readers_3plus_vs_1",
+    stratum = "Inter-modality",
+    moderator = "No. of readers",
+    contrast = "3 or more vs 1",
+    data = im_readers,
+    formula = yi_z ~ reader_count_factor,
+    target_term = "reader_count_factor3plus",
+    target_level_studies = NA_character_
+  ),
+  list(
+    analysis_id = "IM_representative_spectrum",
+    stratum = "Inter-modality",
+    moderator = "Representative spectrum",
+    contrast = "Yes vs no/unclear",
+    data = im_rep,
+    formula = yi_z ~ rep_yes,
+    target_term = "rep_yes",
+    target_level_studies = NA_character_
+  )
+)
+
+canonical_nominal <- meta_regression_results %>%
+  filter(p_raw < 0.05) %>%
+  select(stratum, moderator, contrast, beta, se, df, p_raw, df_interpretation)
+
+if (nrow(canonical_nominal) != 8) {
+  stop(sprintf(
+    "Expected eight moderator contrasts with nominal p<0.05, found %d.",
+    nrow(canonical_nominal)
+  ))
+}
+
+spec_keys <- bind_rows(lapply(loso_specs, function(x) {
+  tibble(
+    stratum = x$stratum,
+    moderator = x$moderator,
+    contrast = x$contrast
+  )
+}))
+key_columns <- c("stratum", "moderator", "contrast")
+if (
+  nrow(anti_join(canonical_nominal, spec_keys, by = key_columns)) > 0 ||
+    nrow(anti_join(spec_keys, canonical_nominal, by = key_columns)) > 0
+) {
+  stop("LOSO specifications do not match the nominal-p meta-regression rows.")
+}
+
+loso_validation_parts <- list()
+loso_iteration_parts <- list()
+
+for (spec in loso_specs) {
+  full_fit <- fit_loso_target(spec$data, spec$formula, spec$target_term)
+  if (!isTRUE(full_fit$ok)) {
+    stop(sprintf(
+      "Full model failed for %s: %s",
+      spec$analysis_id,
+      full_fit$error
+    ))
+  }
+
+  canonical_row <- canonical_nominal %>%
+    filter(
+      stratum == spec$stratum,
+      moderator == spec$moderator,
+      contrast == spec$contrast
+    )
+  if (nrow(canonical_row) != 1) {
+    stop(sprintf("Canonical row lookup failed for %s.", spec$analysis_id))
+  }
+
+  loso_validation_parts[[length(loso_validation_parts) + 1]] <- tibble(
+    analysis_id = spec$analysis_id,
+    stratum = spec$stratum,
+    moderator = spec$moderator,
+    contrast = spec$contrast,
+    target_term = spec$target_term,
+    effects = nrow(spec$data),
+    studies = n_distinct(spec$data$study_id),
+    clusters = n_distinct(spec$data$dep_id),
+    beta_recomputed = full_fit$beta,
+    beta_canonical = canonical_row$beta,
+    beta_abs_diff = abs(full_fit$beta - canonical_row$beta),
+    se_recomputed = full_fit$se,
+    se_canonical = canonical_row$se,
+    se_abs_diff = abs(full_fit$se - canonical_row$se),
+    df_recomputed = full_fit$df,
+    df_canonical = canonical_row$df,
+    df_abs_diff = abs(full_fit$df - canonical_row$df),
+    p_recomputed = full_fit$p_raw,
+    p_canonical = canonical_row$p_raw,
+    p_abs_diff = abs(full_fit$p_raw - canonical_row$p_raw),
+    canonical_interpretation = canonical_row$df_interpretation,
+    target_level_studies = spec$target_level_studies,
+    full_model_warnings = full_fit$warnings
+  )
+
+  for (omitted_study in sort(unique(spec$data$study_id))) {
+    deletion_data <- spec$data %>% filter(study_id != omitted_study)
+    deletion_fit <- fit_loso_target(
+      deletion_data,
+      spec$formula,
+      spec$target_term
+    )
+    loso_iteration_parts[[length(loso_iteration_parts) + 1]] <- tibble(
+      analysis_id = spec$analysis_id,
+      stratum = spec$stratum,
+      moderator = spec$moderator,
+      contrast = spec$contrast,
+      omitted_study = omitted_study,
+      removed_effects = sum(spec$data$study_id == omitted_study),
+      remaining_effects = nrow(deletion_data),
+      remaining_studies = n_distinct(deletion_data$study_id),
+      remaining_clusters = n_distinct(deletion_data$dep_id),
+      successful = deletion_fit$ok,
+      beta = deletion_fit$beta,
+      se = deletion_fit$se,
+      df = deletion_fit$df,
+      p_raw = deletion_fit$p_raw,
+      nominal_p_lt_0_05 = ifelse(
+        deletion_fit$ok,
+        deletion_fit$p_raw < 0.05,
+        NA
+      ),
+      direction_consistent = ifelse(
+        deletion_fit$ok,
+        sign(deletion_fit$beta) == sign(full_fit$beta),
+        NA
+      ),
+      warnings = deletion_fit$warnings,
+      failure_reason = deletion_fit$error
+    )
+  }
+}
+
+loso_validation <- bind_rows(loso_validation_parts)
+loso_iterations <- bind_rows(loso_iteration_parts)
+
+validation_tolerance <- 1e-10
+if (any(
+  loso_validation$beta_abs_diff > validation_tolerance |
+    loso_validation$se_abs_diff > validation_tolerance |
+    loso_validation$df_abs_diff > validation_tolerance |
+    loso_validation$p_abs_diff > validation_tolerance
+)) {
+  stop("At least one LOSO full model did not match the canonical result.")
+}
+
+loso_summary <- loso_iterations %>%
+  left_join(
+    loso_validation %>%
+      select(
+        analysis_id,
+        full_beta = beta_recomputed,
+        full_p_raw = p_recomputed,
+        canonical_interpretation,
+        target_level_studies
+      ),
+    by = "analysis_id"
+  ) %>%
+  group_by(
+    analysis_id, stratum, moderator, contrast,
+    full_beta, full_p_raw, canonical_interpretation,
+    target_level_studies
+  ) %>%
+  summarise(
+    planned_iterations = n(),
+    successful_iterations = sum(successful),
+    non_estimable_iterations = sum(!successful),
+    direction_consistent_n = sum(direction_consistent, na.rm = TRUE),
+    direction_consistent_denominator = sum(successful),
+    nominal_p_lt_0_05_n = sum(nominal_p_lt_0_05, na.rm = TRUE),
+    nominal_p_lt_0_05_denominator = sum(successful),
+    beta_min = ifelse(any(successful), min(beta[successful]), NA_real_),
+    beta_max = ifelse(any(successful), max(beta[successful]), NA_real_),
+    p_raw_min = ifelse(any(successful), min(p_raw[successful]), NA_real_),
+    p_raw_max = ifelse(any(successful), max(p_raw[successful]), NA_real_),
+    non_estimable_studies = paste(omitted_study[!successful], collapse = ";"),
+    failure_reasons = paste(unique(failure_reason[!successful]), collapse = " | "),
+    warning_iterations = sum(warnings != ""),
+    .groups = "drop"
+  )
+
+write_csv(
+  loso_iterations,
+  file.path(out_dir, "loso_nominal_moderator_iterations.csv")
+)
+write_csv(
+  loso_summary,
+  file.path(out_dir, "loso_nominal_moderator_summary.csv")
+)
+write_csv(
+  loso_validation,
+  file.path(out_dir, "loso_nominal_moderator_validation.csv")
+)
+
+## Focused leave-one-abstract-study-out checks for the inter-reader
+## publication-type contrast. These are separate from the nominal-p set above
+## because the full inter-reader publication-type contrast had p=0.272.
+
+publication_check_parts <- list()
+publication_check_specs <- c("Full model", sort(unique(
+  ir_publication$study_id[ir_publication$is_abstract == 1]
+)))
+
+for (check_label in publication_check_specs) {
+  omitted_study <- if (check_label == "Full model") NA_character_ else check_label
+  check_data <- if (is.na(omitted_study)) {
+    ir_publication
+  } else {
+    ir_publication %>% filter(study_id != omitted_study)
+  }
+  check_fit <- fit_loso_target(
+    check_data,
+    yi_z ~ is_abstract,
+    "is_abstract"
+  )
+  abstract_data <- check_data %>% filter(is_abstract == 1)
+  abstract_studies <- n_distinct(abstract_data$study_id)
+  abstract_clusters <- n_distinct(abstract_data$dep_id)
+  publication_check_parts[[length(publication_check_parts) + 1]] <- tibble(
+    analysis = check_label,
+    omitted_study = omitted_study,
+    effects = nrow(check_data),
+    studies = n_distinct(check_data$study_id),
+    clusters = n_distinct(check_data$dep_id),
+    abstract_effects = nrow(abstract_data),
+    abstract_studies = abstract_studies,
+    abstract_clusters = abstract_clusters,
+    successful = check_fit$ok,
+    beta = check_fit$beta,
+    se = check_fit$se,
+    df = check_fit$df,
+    p_raw = check_fit$p_raw,
+    interpretation = case_when(
+      !check_fit$ok ~ "Non-estimable",
+      abstract_studies < 2 || abstract_clusters < 2 ~
+        "Non-interpretable (singleton abstract level)",
+      check_fit$df < 4 ~ "Non-interpretable (df<4)",
+      check_fit$df < 10 ~ "Fragile (df 4-<10)",
+      TRUE ~ "Exploratory"
+    ),
+    warnings = check_fit$warnings,
+    failure_reason = check_fit$error
+  )
+}
+
+inter_reader_publication_checks <- bind_rows(publication_check_parts)
+write_csv(
+  inter_reader_publication_checks,
+  file.path(out_dir, "inter_reader_publication_type_leave_one_abstract.csv")
+)
+
+cat("\nNominal-p moderator leave-one-study-out summary\n")
+print(loso_summary, n = Inf, width = Inf)
+cat("\nInter-reader publication-type leave-one-abstract checks\n")
+print(inter_reader_publication_checks, n = Inf, width = Inf)
