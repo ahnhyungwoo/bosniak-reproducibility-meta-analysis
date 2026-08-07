@@ -778,7 +778,7 @@ version_audit <- stud %>%
       submitted_table_display_error,
       paste(
         "Corrected Table 1 display from v2019 to original/pre-2019;",
-        "analytic standardized coding was already original"
+        "error arose in table-generation code, not analytic coding"
       ),
       "No version-display correction required"
     )
