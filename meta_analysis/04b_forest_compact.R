@@ -293,11 +293,14 @@ make_subgroup_forest(
 # ============================================================
 
 im_opes <- opes_all %>% filter(analytic_stratum == "inter-modality") %>%
-  mutate(label = case_when(
-    std_modality_1 == "CT_MRI" | std_modality_2 == "CT_MRI" ~ paste0(label, "*"),
-    std_modality_1 == "DECT"   | std_modality_2 == "DECT"   ~ paste0(label, "\u2020"),
-    TRUE ~ label
-  ))
+  mutate(
+    label = gsub("_", " ", label, fixed = TRUE),
+    label = case_when(
+      std_modality_1 == "CT_MRI" | std_modality_2 == "CT_MRI" ~ paste0(label, "*"),
+      std_modality_1 == "DECT"   | std_modality_2 == "DECT"   ~ paste0(label, "\u2020"),
+      TRUE ~ label
+    )
+  )
 
 cat("\nIM modality pair groups:\n")
 print(table(im_opes$mod_pair))
@@ -307,7 +310,7 @@ make_subgroup_forest(
   group_var = "mod_pair",
   group_order = c("CT vs MRI", "CT vs CEUS/US", "MRI vs CEUS/US", "Other"),
   group_labels = c("CT vs MRI", "CT vs CEUS/US", "MRI vs CEUS/US", "Other"),
-  stratum_label = "Inter-modality agreement for Bosniak classification (\u03ba)",
+  stratum_label = "Inter-modality concordance for Bosniak classification (\u03ba)",
   rve_est = rve_im,
   filename = "fig2_inter_modality.pdf",
   fig_width = 7.5,

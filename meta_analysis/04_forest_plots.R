@@ -353,18 +353,21 @@ make_subgroup_forest_supp(
 
 # --- Inter-modality: subgrouped by pair, Ver/n ---
 im_opes <- opes_all %>% filter(analytic_stratum == "inter-modality") %>%
-  mutate(label = case_when(
-    std_modality_1 == "CT_MRI" | std_modality_2 == "CT_MRI" ~ paste0(label, "*"),
-    std_modality_1 == "DECT"   | std_modality_2 == "DECT"   ~ paste0(label, "\u2020"),
-    TRUE ~ label
-  ))
+  mutate(
+    label = gsub("_", " ", label, fixed = TRUE),
+    label = case_when(
+      std_modality_1 == "CT_MRI" | std_modality_2 == "CT_MRI" ~ paste0(label, "*"),
+      std_modality_1 == "DECT"   | std_modality_2 == "DECT"   ~ paste0(label, "\u2020"),
+      TRUE ~ label
+    )
+  )
 
 make_subgroup_forest_supp(
   im_opes,
   group_var = "mod_pair",
   group_order = c("CT vs MRI", "CT vs CEUS/US", "MRI vs CEUS/US", "Other"),
   group_labels = c("CT vs MRI", "CT vs CEUS/US", "MRI vs CEUS/US", "Other"),
-  stratum_label = "Inter-modality agreement for Bosniak classification (\u03ba)",
+  stratum_label = "Inter-modality concordance for Bosniak classification (\u03ba)",
   rve_est = rve_im,
   show_cols = c("ver", "n"),
   col_positions = c(-0.70, -0.58),
@@ -393,7 +396,7 @@ iv_opes <- opes_all %>% filter(analytic_stratum == "inter-version")
 
 make_simple_forest_supp(
   iv_opes,
-  stratum_label = "Inter-version agreement for Bosniak classification (\u03ba)",
+  stratum_label = "Inter-version concordance for Bosniak classification (\u03ba)",
   show_cols = c("mod", "n"),
   col_positions = c(-0.75, -0.58),
   filename = "forest_inter_version.pdf",

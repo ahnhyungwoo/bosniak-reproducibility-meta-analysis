@@ -70,7 +70,7 @@ make_funnel <- function(model, title, file_prefix, ylim_max = NULL, steps = 5) {
     }
     par(mar = c(4.5, 4.5, 2, 1), bg = "white")
     funnel(model,
-           xlab = expression(paste("Kappa (Fisher\'s ", italic(z), ")")),
+           xlab = expression(paste("Fisher ", italic(z), "-transformed ", kappa)),
            main = title,
            back = "white",
            shade = "white",
@@ -130,15 +130,15 @@ make_funnel(ir_res$mod,
 # Inter-modality OPES
 # ============================================================
 im_opes <- opes_all %>% filter(analytic_stratum == "inter-modality")
-im_res <- run_tests(im_opes, "Inter-modality agreement")
+im_res <- run_tests(im_opes, "Inter-modality concordance")
 
 # IM: funnel + trim-and-fill funnel (1 study imputed)
 make_funnel(im_res$mod,
-            "Inter-modality agreement",
+            "Inter-modality concordance",
             "fig_im_funnel")
 
 make_funnel(im_res$tf,
-            "Inter-modality agreement (trim-and-fill)",
+            "Inter-modality concordance (trim-and-fill)",
             "fig_im_funnel_tf")
 
 
