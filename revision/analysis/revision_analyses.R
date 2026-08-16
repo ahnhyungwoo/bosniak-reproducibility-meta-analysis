@@ -1,7 +1,7 @@
 ## Bosniak reproducibility major-revision analyses
 ##
-## This script leaves the submitted datasets unchanged and writes the
-## additional analysis outputs under revision/analysis/results.
+## This script reads the audited master datasets and writes the additional
+## analysis outputs under revision/analysis/results.
 
 script_arg <- grep("^--file=", commandArgs(), value = TRUE)
 if (length(script_arg) == 0) {
@@ -76,18 +76,18 @@ write_csv(
   file.path(out_dir, "qarel_item_counts.csv")
 )
 
-# Source verification during revision showed that Chang 2015 is a poster
-# abstract in the 2015 JASN conference supplement, not a full journal article.
-# The submitted source file is left untouched; the correction is applied
-# transparently here and documented in revision/data/data_correction_log.csv.
-stud <- stud %>%
-  mutate(
-    publication_type = if_else(
-      study_id == "Chang_2015",
-      "conference_abstract",
-      publication_type
-    )
+invalid_publication_types <- stud %>%
+  semi_join(active_study_ids, by = "study_id") %>%
+  filter(!publication_type %in% c("journal_article", "conference_abstract"))
+if (nrow(invalid_publication_types) > 0) {
+  stop(
+    "Every retained study must have a standardized publication_type: ",
+    paste(invalid_publication_types$study_id, collapse = "; ")
   )
+}
+if (stud$publication_type[stud$study_id == "Chang_2015"] != "conference_abstract") {
+  stop("Chang_2015 must be coded as conference_abstract in studies.csv.")
+}
 
 pediatric_ids <- c("Peng_2010", "Karmazyn_2015", "Frumer_2021", "Peard_2022")
 
@@ -504,6 +504,15 @@ run_rho <- function(data, label, rho) {
   )
 }
 
+ir_single_cohort <- ir %>%
+  mutate(
+    dep_id = if_else(
+      study_id %in% c("Bai_2020", "Kang_2022"),
+      "Bai_2020_Kang_2022_possible_shared_cohort",
+      dep_id
+    )
+  )
+
 summary_parts <- list(
   run_rve(ir, "Inter-reader primary RVE+CR2", analysis_family = "primary"),
   run_rve(im, "Inter-modality primary RVE+CR2", analysis_family = "primary"),
@@ -559,6 +568,26 @@ summary_parts <- list(
     analysis_family = "cluster"
   ),
   run_rve(
+    ir_single_cohort,
+    "Inter-reader single-cohort dependency stress test (Bai 2020 and Kang 2022)",
+    analysis_family = "possible_cohort_overlap"
+  ),
+  run_opes(
+    ir,
+    "Inter-reader OPES full model (overlap reference)",
+    analysis_family = "possible_cohort_overlap"
+  ),
+  run_opes(
+    ir %>% filter(study_id != "Bai_2020"),
+    "Inter-reader OPES excluding Bai 2020",
+    analysis_family = "possible_cohort_overlap"
+  ),
+  run_opes(
+    ir %>% filter(study_id != "Kang_2022"),
+    "Inter-reader OPES excluding Kang 2022",
+    analysis_family = "possible_cohort_overlap"
+  ),
+  run_rve(
     ir %>% filter(nc >= 30),
     "Inter-reader n>=30 lesions",
     analysis_family = "sample_size"
@@ -592,6 +621,10 @@ for (rho in c(0, 0.3, 0.5, 0.8)) {
 
 analysis_summary <- bind_rows(summary_parts)
 write_csv(analysis_summary, file.path(out_dir, "revision_analysis_summary.csv"))
+write_csv(
+  analysis_summary %>% filter(analysis_family == "possible_cohort_overlap"),
+  file.path(out_dir, "possible_cohort_overlap_sensitivity.csv")
+)
 
 variance_counts <- dat %>%
   filter(analytic_stratum %in% c(
@@ -1522,19 +1555,6 @@ loso_specs <- list(
     target_level_studies = NA_character_
   ),
   list(
-    analysis_id = "IM_publication_type_abstract_vs_fulltext",
-    stratum = "Inter-modality",
-    moderator = "Publication type",
-    contrast = "Abstract vs full text",
-    data = im_publication,
-    formula = yi_z ~ is_abstract,
-    target_term = "is_abstract",
-    target_level_studies = paste(
-      sort(unique(im_publication$study_id[im_publication$is_abstract == 1])),
-      collapse = ";"
-    )
-  ),
-  list(
     analysis_id = "IM_readers_3plus_vs_1",
     stratum = "Inter-modality",
     moderator = "No. of readers",
@@ -1560,9 +1580,9 @@ canonical_nominal <- meta_regression_results %>%
   filter(p_raw < 0.05) %>%
   select(stratum, moderator, contrast, beta, se, df, p_raw, df_interpretation)
 
-if (nrow(canonical_nominal) != 8) {
+if (nrow(canonical_nominal) != 7) {
   stop(sprintf(
-    "Expected eight moderator contrasts with nominal p<0.05, found %d.",
+    "Expected seven moderator contrasts with nominal p<0.05, found %d.",
     nrow(canonical_nominal)
   ))
 }

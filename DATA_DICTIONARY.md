@@ -64,13 +64,13 @@ all-study and applicable-study denominators and percentages.
 ## Revision analysis outputs
 
 - `loso_nominal_moderator_iterations.csv` contains one row for every planned
-  leave-one-study-out deletion for the eight moderator contrasts with nominal
+  leave-one-study-out deletion for the seven moderator contrasts with nominal
   p<0.05. It records model estimability, the omitted study, the coefficient,
   standard error, Satterthwaite degrees of freedom, raw p value, coefficient
   direction, and warnings or failure reason.
 - `loso_nominal_moderator_summary.csv` summarizes the successful and
   non-estimable deletion models, direction consistency, nominal p<0.05 counts,
-  and coefficient and p-value ranges for each of the eight contrasts.
+  and coefficient and p-value ranges for each of the seven contrasts.
 - `loso_nominal_moderator_validation.csv` verifies that every recomputed full
   model matches its row in `meta_regression_revision.csv` before the deletion
   analyses are run.
@@ -78,6 +78,10 @@ all-study and applicable-study denominators and percentages.
   inter-reader publication-type model and the two focused checks omitting each
   abstract study in turn, with singleton abstract levels identified as
   non-interpretable.
+- `possible_cohort_overlap_sensitivity.csv` contains the inter-reader
+  single-cohort dependency stress test for Bai (2020) and Kang (2022), the
+  corresponding full OPES estimate, and OPES estimates excluding each study in
+  turn.
 
 ## Analytic conventions
 

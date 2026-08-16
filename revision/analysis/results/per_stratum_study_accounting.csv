@@ -52,20 +52,20 @@ inter-reader,He_2026,He,2026,journal_article,6,kappa,6,1,Included in primary all
 inter-reader,Jin_2026,Jin,2026,journal_article,1,Gwet AC1,0,0,Excluded from kappa pooling: only non-kappa metric(s) reported
 inter-reader,Sebastià_2026,Sebastià,2026,journal_article,1,kappa,1,1,Included in primary all-eligible-kappa RVE+CR2 model
 inter-reader,Urraro_2026,Urraro,2026,journal_article,1,kappa,1,1,Included in primary all-eligible-kappa RVE+CR2 model
-inter-modality,Bielsa_Gali_1999,Bielsa Gali,1999,original article,1,kappa,1,1,Included in primary all-eligible-kappa RVE+CR2 model
+inter-modality,Bielsa_Gali_1999,Bielsa Gali,1999,journal_article,1,kappa,1,1,Included in primary all-eligible-kappa RVE+CR2 model
 inter-modality,Israel_2004,Israel,2004,journal_article,1,kappa,1,1,Included in primary all-eligible-kappa RVE+CR2 model
 inter-modality,Ascenti_2007,Ascenti,2007,journal_article,1,kappa,1,1,Included in primary all-eligible-kappa RVE+CR2 model
 inter-modality,Park_2007,Park,2007,journal_article,1,kappa,1,1,Included in primary all-eligible-kappa RVE+CR2 model
 inter-modality,Clevert_2008,Clevert,2008,journal_article,1,kappa,1,1,Included in primary all-eligible-kappa RVE+CR2 model
-inter-modality,Ignee_2010,Ignee,2010,NA,1,kappa,1,1,Included in primary all-eligible-kappa RVE+CR2 model
+inter-modality,Ignee_2010,Ignee,2010,journal_article,1,kappa,1,1,Included in primary all-eligible-kappa RVE+CR2 model
 inter-modality,Foukal_2014,Foukal,2014,journal_article,1,kappa,1,1,Included in primary all-eligible-kappa RVE+CR2 model
 inter-modality,Ferreira_2016,Ferreira,2016,journal_article,1,kappa,1,1,Included in primary all-eligible-kappa RVE+CR2 model
 inter-modality,Graumann_2016,Graumann,2016,journal_article,2,kappa,2,1,Included in primary all-eligible-kappa RVE+CR2 model
 inter-modality,Ragel_2016,Ragel,2016,journal_article,2,kappa,2,1,Included in primary all-eligible-kappa RVE+CR2 model
-inter-modality,Rocca_2016,Rocca,2016,journal_article,1,kappa,1,1,Included in primary all-eligible-kappa RVE+CR2 model
+inter-modality,Rocca_2016,Rocca,2016,conference_abstract,1,kappa,1,1,Included in primary all-eligible-kappa RVE+CR2 model
 inter-modality,Sanz_2016,Sanz,2016,journal_article,1,kappa,1,1,Included in primary all-eligible-kappa RVE+CR2 model
 inter-modality,Zhong_2017,Zhong,2017,journal_article,1,kappa,1,1,Included in primary all-eligible-kappa RVE+CR2 model
-inter-modality,Oon_2018,Oon,2018,NA,1,kappa,1,1,Included in primary all-eligible-kappa RVE+CR2 model
+inter-modality,Oon_2018,Oon,2018,journal_article,1,kappa,1,1,Included in primary all-eligible-kappa RVE+CR2 model
 inter-modality,Pitra_2018,Pitra,2018,journal_article,2,kappa,2,1,Included in primary all-eligible-kappa RVE+CR2 model
 inter-modality,Lee_2020,Lee,2020,journal_article,2,kappa,2,1,Included in primary all-eligible-kappa RVE+CR2 model
 inter-modality,Lerchbaumer_2020,Lerchbaumer,2020,journal_article,2,percentage agreement,0,0,Excluded from kappa pooling: only non-kappa metric(s) reported
@@ -79,7 +79,7 @@ inter-modality,Peard_2022,Peard,2022,journal_article,3,kappa,3,1,Included in pri
 inter-modality,Almalki_2023,Almalki,2023,journal_article,1,kappa,1,1,Included in primary all-eligible-kappa RVE+CR2 model
 inter-modality,Das_2023,Das,2023,journal_article,1,kappa,1,1,Included in primary all-eligible-kappa RVE+CR2 model
 inter-modality,Herms_2023,Herms,2023,journal_article,1,kappa,1,1,Included in primary all-eligible-kappa RVE+CR2 model
-inter-modality,Reizine_2024,Reizine,2024,NA,1,kappa,1,1,Included in primary all-eligible-kappa RVE+CR2 model
+inter-modality,Reizine_2024,Reizine,2024,journal_article,1,kappa,1,1,Included in primary all-eligible-kappa RVE+CR2 model
 inter-modality,He_2025,He,2025,journal_article,1,kappa,1,1,Included in primary all-eligible-kappa RVE+CR2 model
 inter-modality,Anshulmeena_2026,Anshulmeena,2026,journal_article,1,kappa,1,1,Included in primary all-eligible-kappa RVE+CR2 model
 inter-modality,He_2026,He,2026,journal_article,1,kappa,1,1,Included in primary all-eligible-kappa RVE+CR2 model
@@ -91,7 +91,7 @@ intra-reader,Bai_2022,Bai,2022,journal_article,7,ICC,0,0,Excluded from kappa poo
 intra-reader,Jin_2024,Jin,2024,journal_article,6,Gwet AC2,0,0,Excluded from kappa pooling: only non-kappa metric(s) reported
 intra-reader,Münch_2024,Münch,2024,journal_article,6,kappa,6,1,Included in primary OPES model (one selected effect per study)
 intra-reader,Urraro_2026,Urraro,2026,journal_article,2,ICC,0,0,Excluded from kappa pooling: only non-kappa metric(s) reported
-inter-version,Angelini_2021,Angelini,2021,NA,1,kappa,1,1,Included in primary OPES model (one selected effect per study)
+inter-version,Angelini_2021,Angelini,2021,conference_abstract,1,kappa,1,1,Included in primary OPES model (one selected effect per study)
 inter-version,Osman_2021,Osman,2021,journal_article,6,kappa,6,1,Included in primary OPES model (one selected effect per study)
 inter-version,Chandrasekar_2023,Chandrasekar,2023,journal_article,1,kappa,1,1,Included in primary OPES model (one selected effect per study)
 inter-version,Gomma_2023,Gomma,2023,journal_article,1,kappa,1,1,Included in primary OPES model (one selected effect per study)

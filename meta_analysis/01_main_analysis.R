@@ -25,17 +25,19 @@ comp <- read_csv("comparisons.csv", show_col_types = FALSE)
 stud <- read_csv("studies.csv", show_col_types = FALSE)
 qarel <- read_csv("qarel_for_analysis.csv", show_col_types = FALSE)
 
-# Source verification during revision showed that Chang 2015 was a conference
-# abstract rather than a full journal article. Apply the corrected publication
-# type without changing the deposited source table.
-stud <- stud %>%
-  mutate(
-    publication_type = if_else(
-      study_id == "Chang_2015",
-      "conference_abstract",
-      publication_type
-    )
-  )
+# Publication type is maintained in studies.csv as the single source of truth.
+standard_publication_types <- c("journal_article", "conference_abstract")
+active_studies <- unique(comp$study_id[is.na(comp$exclude) | comp$exclude == ""])
+active_publication_types <- stud %>%
+  filter(study_id %in% active_studies) %>%
+  pull(publication_type)
+if (any(is.na(active_publication_types)) ||
+    any(!active_publication_types %in% standard_publication_types)) {
+  stop("Every retained study must have a standardized publication_type in studies.csv")
+}
+if (stud$publication_type[stud$study_id == "Chang_2015"] != "conference_abstract") {
+  stop("Chang_2015 must be coded as conference_abstract in studies.csv")
+}
 
 # Join study-level variables
 comp <- comp %>%
@@ -608,7 +610,7 @@ im_k_pub <- im_k %>%
   filter(!is.na(pub_type)) %>%
   mutate(is_abstract = ifelse(pub_type == "abstract", 1, 0))
 run_moderator(im_k_pub, yi ~ is_abstract, "IM.4 pub_type (abstract vs fulltext)")
-cat("    Interpretation: not interpretable because the abstract level contains only one study and one dependency cluster.\n")
+cat("    Interpretation: not interpretable because Satterthwaite df is below 4 (abstract level: two studies and two dependency clusters).\n")
 
 # 5. Reader experience (continuous)
 im_k_exp <- im_k %>% filter(!is.na(exp_mean))
