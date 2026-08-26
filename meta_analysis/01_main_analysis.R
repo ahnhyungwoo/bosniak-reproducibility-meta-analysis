@@ -544,7 +544,7 @@ ir_k_mv1a <- ir_k %>%
 run_moderator(ir_k_mv1a, yi ~ is_full + is_v2019,
               "IR.MV1a CT-only: ncat + version")
 
-# Model 1b: n_categories + modality + version — all data (EXPLORATORY)
+# Model 1b: n_categories + modality + version — all data (REGISTERED MV1; modality-confounded)
 ir_k_mv1b <- ir_k %>%
   filter(ncat_group %in% c("2-3", "4-5"),
          mod_group %in% c("CT", "MRI", "CEUS_US"),
@@ -553,7 +553,7 @@ ir_k_mv1b <- ir_k %>%
          modality = factor(mod_group, levels = c("CT", "MRI", "CEUS_US")),
          is_v2019 = ifelse(ver_group == "v2019", 1, 0))
 run_moderator(ir_k_mv1b, yi ~ is_full + modality + is_v2019,
-              "IR.MV1b all-mod: ncat + modality + version (EXPLORATORY)")
+              "IR.MV1b all-mod: ncat + modality + version (REGISTERED MV1; modality-confounded)")
 
 # Model 2: n_categories + weight_scheme (methodological)
 ir_k_mv2 <- ir_k %>%
@@ -764,11 +764,11 @@ add_row("IM 5-cat RVE", im_5c_res, im_5c_res$k, im_5c_res$n_clusters)
 
 
 # ============================================================
-# 8. EXPLORATORY: All metrics pooled
+# 8. REGISTERED SENSITIVITY: All metrics pooled
 # ============================================================
 
 cat("\n", paste(rep("=", 70), collapse = ""), "\n")
-cat("EXPLORATORY: All metrics pooled (kappa + Gwet + ICC)\n")
+cat("REGISTERED SENSITIVITY: All metrics pooled (kappa + Gwet + ICC)\n")
 cat(paste(rep("=", 70), collapse = ""), "\n")
 
 ir_all <- dat %>% filter(analytic_stratum == "inter-reader")

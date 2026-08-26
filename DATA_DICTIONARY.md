@@ -110,8 +110,8 @@ lesions were divided between the lower and higher tiers; marginal distributions,
 
 ### Additional sensitivity outputs
 
-- `variance_swap_sensitivity.csv` reports the prespecified sampling-variance
-  substitution sensitivity analyses.
+- `variance_swap_sensitivity.csv` reports the post hoc sampling-variance
+  substitution sensitivity analysis added during revision.
 - `version_all_effects_restricted.csv` reports the restricted all-effects
   version sensitivity analyses.
 
