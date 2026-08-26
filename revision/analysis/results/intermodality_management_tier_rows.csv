@@ -1,0 +1,27 @@
+﻿tier_row_id,modality_pair,study,comparison_id,version_reader,n,lower_lower,other_higher,other_lower,higher_higher,observed_agreement,kappa,ac1,net_other_higher,reconstruction_status,source
+IMT01,CT-MRI,Almalki (2023),C015,2019 / Consensus,60,18,7,3,32,0.8333,0.6491,0.6839,4,full,PDF p6 Table 4
+IMT02,CT-MRI,Anshulmeena (2026),C396,2019 / Consensus,50,44,1,0,5,0.9800,0.8980,0.9751,1,full,PDF pp3-4 Tables 5-6 and upgrade text
+IMT03,CT-MRI,Chan (2021),C050,2019 / Consensus,65,40,0,2,23,0.9692,0.9340,0.9424,-2,full,PDF p5 Table 2
+IMT04,CT-MRI,Chan (2021),C049,Original / Consensus,65,29,2,2,32,0.9385,0.8767,0.8772,0,full,PDF p5 Table 2
+IMT05,CT-MRI,Ferreira (2016),C462,2005 / Consensus,42,29,2,0,11,0.9524,0.8837,0.9195,2,full,PDF p3 Table 2
+IMT06,CT-MRI,Israel (2004),C120,Original / Consensus,69,38,3,0,28,0.9565,0.9113,0.9148,3,full,PDF p3 Results and discrepancy table
+IMT07,CT-MRI,Park (2021),C192,2005 / Reader 1,104,13,11,2,78,0.8750,0.5947,0.8202,9,full,Supplement p7 Table S6
+IMT08,CT-MRI,Park (2021),C193,2005 / Reader 2,104,16,12,1,75,0.8750,0.6373,0.8109,11,full,Supplement p7 Table S6
+IMT09,CT-MRI,Park (2021),C194,2019 / Reader 1,104,30,10,7,57,0.8365,0.6498,0.6937,3,full,Supplement p7 Table S6
+IMT10,CT-MRI,Park (2021),C195,2019 / Reader 2,104,30,9,4,61,0.8750,0.7263,0.7704,5,full,Supplement p7 Table S6
+IMT11,CT-MRI,Pitra (2018),C518,Original / Reader 1,29,0,7,0,22,0.7586,0.0000,0.6936,7,full,Supplementary Material Table 4
+IMT12,CT-MRI,Pitra (2018),C519,Original / Reader 2,29,1,4,0,24,0.8621,0.2927,0.8307,4,full,Supplementary Material Table 4
+IMT13,CT-MRI,Tshering Vogel (2021),C354,2005 / Consensus,65,41,2,0,22,0.9692,0.9328,0.9433,2,full,PDF p4 Table 2
+IMT14,CT-MRI,Yenice (2020),C284,Original / Consensus,102,51,12,6,33,0.8235,0.6370,0.6577,6,full,PDF p5 Table 2
+IMT15,CT-MRI,Zhong (2017),C289,Original / Consensus,35,7,4,0,24,0.8857,0.7059,0.8151,4,full,PDF Results: eight discordances and modality margins
+IMT16,CT-CEUS,Ascenti 2007,,,44,29,0,0,15,1.000,1.000,1.000,0,full,Management boundary I-II-IIF vs III-IV; perfectly concordant
+IMT17,CT-CEUS,Clevert 2008,,,37,20,2,0,15,0.946,0.890,0.894,2,full,Management boundary below III vs III-IV
+IMT18,CT-CEUS,Das 2023,,,40,16,6,1,17,0.825,0.655,0.650,5,full,Reconstructed from discordant-lesion table
+IMT19,CT-CEUS,Foukal 2014,,,112,89,9,2,12,0.902,0.630,0.867,7,full,CEUS rows in source table; boundary nonsurgical vs surgical
+IMT20,CT-CEUS,Ignee 2010,,,10,0,2,0,8,0.800,0.000,0.756,2,full,CEUS assigned all lesions to the higher tier
+IMT21,CT-CEUS,Park 2007,,,31,0,5,0,26,0.839,0.000,0.811,5,full,CEUS assigned all lesions to the higher tier
+IMT22,CT-CEUS,Ragel 2016,,Observer 1,51,42,0,4,5,0.922,0.673,0.897,-4,full,Same lesions as observer 2
+IMT23,CT-CEUS,Ragel 2016,,Observer 2,51,22,2,19,8,0.588,0.205,0.234,-17,full,Same lesions as observer 1
+IMT24,CT-CEUS,Sanz 2016,,,66,38,7,1,20,0.879,0.740,0.774,6,full,Table denominator 66 although study reports 67 lesions
+IMT25,CT-CEUS,Tshering Vogel (2021),C352,2005 / Consensus,65,34,9,0,22,0.8615,0.7189,0.7322,9,full,PDF p4 Table 2
+IMT26,CT-CEUS,Rocca (2016),C400,Abstract,42,,3,6,,0.7857,,,-3,direction-only,"Abstract: 2 II-to-IIF, 3 IIF-to-III, 6 III-to-IIF; tier margins unavailable"

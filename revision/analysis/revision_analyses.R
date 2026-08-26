@@ -1750,58 +1750,77 @@ write_csv(
   file.path(out_dir, "loso_nominal_moderator_validation.csv")
 )
 
-## Focused leave-one-abstract-study-out checks for the inter-reader
-## publication-type contrast. These are separate from the nominal-p set above
-## because the full inter-reader publication-type contrast had p=0.272.
+## Focused leave-one-abstract-study-out checks for the publication-type
+## contrasts in both primary strata. These are separate from the nominal-p set
+## above because the corrected full publication-type contrasts were not
+## nominally significant, while the reviewer specifically requested this check
+## for the inter-reader stratum and the publication-type audit identified the
+## same coding error in the inter-modality stratum.
 
-publication_check_parts <- list()
-publication_check_specs <- c("Full model", sort(unique(
-  ir_publication$study_id[ir_publication$is_abstract == 1]
-)))
+run_publication_checks <- function(publication_data, stratum_label) {
+  publication_check_parts <- list()
+  publication_check_specs <- c("Full model", sort(unique(
+    publication_data$study_id[publication_data$is_abstract == 1]
+  )))
 
-for (check_label in publication_check_specs) {
-  omitted_study <- if (check_label == "Full model") NA_character_ else check_label
-  check_data <- if (is.na(omitted_study)) {
-    ir_publication
-  } else {
-    ir_publication %>% filter(study_id != omitted_study)
+  for (check_label in publication_check_specs) {
+    omitted_study <- if (check_label == "Full model") NA_character_ else check_label
+    check_data <- if (is.na(omitted_study)) {
+      publication_data
+    } else {
+      publication_data %>% filter(study_id != omitted_study)
+    }
+    check_fit <- fit_loso_target(
+      check_data,
+      yi_z ~ is_abstract,
+      "is_abstract"
+    )
+    abstract_data <- check_data %>% filter(is_abstract == 1)
+    abstract_studies <- n_distinct(abstract_data$study_id)
+    abstract_clusters <- n_distinct(abstract_data$dep_id)
+    publication_check_parts[[length(publication_check_parts) + 1]] <- tibble(
+      stratum = stratum_label,
+      analysis = check_label,
+      omitted_study = omitted_study,
+      effects = nrow(check_data),
+      studies = n_distinct(check_data$study_id),
+      clusters = n_distinct(check_data$dep_id),
+      abstract_effects = nrow(abstract_data),
+      abstract_studies = abstract_studies,
+      abstract_clusters = abstract_clusters,
+      successful = check_fit$ok,
+      beta = check_fit$beta,
+      se = check_fit$se,
+      df = check_fit$df,
+      p_raw = check_fit$p_raw,
+      interpretation = case_when(
+        !check_fit$ok ~ "Non-estimable",
+        abstract_studies < 2 || abstract_clusters < 2 ~
+          "Non-interpretable (singleton abstract level)",
+        check_fit$df < 4 ~ "Non-interpretable (df<4)",
+        check_fit$df < 10 ~ "Fragile (df 4-<10)",
+        TRUE ~ "Exploratory"
+      ),
+      warnings = check_fit$warnings,
+      failure_reason = check_fit$error
+    )
   }
-  check_fit <- fit_loso_target(
-    check_data,
-    yi_z ~ is_abstract,
-    "is_abstract"
-  )
-  abstract_data <- check_data %>% filter(is_abstract == 1)
-  abstract_studies <- n_distinct(abstract_data$study_id)
-  abstract_clusters <- n_distinct(abstract_data$dep_id)
-  publication_check_parts[[length(publication_check_parts) + 1]] <- tibble(
-    analysis = check_label,
-    omitted_study = omitted_study,
-    effects = nrow(check_data),
-    studies = n_distinct(check_data$study_id),
-    clusters = n_distinct(check_data$dep_id),
-    abstract_effects = nrow(abstract_data),
-    abstract_studies = abstract_studies,
-    abstract_clusters = abstract_clusters,
-    successful = check_fit$ok,
-    beta = check_fit$beta,
-    se = check_fit$se,
-    df = check_fit$df,
-    p_raw = check_fit$p_raw,
-    interpretation = case_when(
-      !check_fit$ok ~ "Non-estimable",
-      abstract_studies < 2 || abstract_clusters < 2 ~
-        "Non-interpretable (singleton abstract level)",
-      check_fit$df < 4 ~ "Non-interpretable (df<4)",
-      check_fit$df < 10 ~ "Fragile (df 4-<10)",
-      TRUE ~ "Exploratory"
-    ),
-    warnings = check_fit$warnings,
-    failure_reason = check_fit$error
-  )
+
+  bind_rows(publication_check_parts)
 }
 
-inter_reader_publication_checks <- bind_rows(publication_check_parts)
+publication_type_checks <- bind_rows(
+  run_publication_checks(ir_publication, "Inter-reader"),
+  run_publication_checks(im_publication, "Inter-modality")
+)
+inter_reader_publication_checks <- publication_type_checks %>%
+  filter(stratum == "Inter-reader") %>%
+  select(-stratum)
+
+write_csv(
+  publication_type_checks,
+  file.path(out_dir, "publication_type_leave_one_abstract.csv")
+)
 write_csv(
   inter_reader_publication_checks,
   file.path(out_dir, "inter_reader_publication_type_leave_one_abstract.csv")
@@ -1809,5 +1828,5 @@ write_csv(
 
 cat("\nNominal-p moderator leave-one-study-out summary\n")
 print(loso_summary, n = Inf, width = Inf)
-cat("\nInter-reader publication-type leave-one-abstract checks\n")
-print(inter_reader_publication_checks, n = Inf, width = Inf)
+cat("\nPublication-type leave-one-abstract checks\n")
+print(publication_type_checks, n = Inf, width = Inf)

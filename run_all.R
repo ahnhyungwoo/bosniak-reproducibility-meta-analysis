@@ -24,7 +24,10 @@ scripts <- c(
   "meta_analysis/03_publication_bias.R",
   "meta_analysis/04_forest_plots.R",
   "meta_analysis/04b_forest_compact.R",
-  "revision/analysis/revision_analyses.R"
+  "revision/analysis/revision_analyses.R",
+  "revision/analysis/management_tier_interreader.R",
+  "revision/analysis/management_tier_intermodality.R",
+  "revision/analysis/variance_swap_sensitivity.R"
 )
 
 rscript <- file.path(

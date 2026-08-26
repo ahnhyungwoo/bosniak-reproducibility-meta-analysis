@@ -1,0 +1,4 @@
+"modality_pair","reconstruction_status","comparisons","studies","lesions_total","observed_agreement_min","observed_agreement_max","kappa_min","kappa_max","ac1_min","ac1_max","net_upward_comparisons","net_balanced_comparisons","net_downward_comparisons","upward_crossings","downward_crossings"
+"CT-MRI","full",15,10,1027,0.7586,0.98,0,0.934,0.6577,0.9751,13,1,1,86,27
+"CT-CEUS","full",10,9,507,0.588,1,0,1,0.234,1,7,1,2,42,27
+"CT-CEUS","direction-only",1,1,42,0.7857,0.7857,,,,,0,0,1,3,6

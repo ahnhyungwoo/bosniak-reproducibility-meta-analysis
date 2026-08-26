@@ -1,6 +1,6 @@
 # Bosniak classification reproducibility meta-analysis
 
-This repository contains the aggregate study-level data and R code for:
+This repository contains the analytic data and R code for:
 
 > Reproducibility of the Bosniak Classification for Malignancy Risk
 > Stratification of Cystic Renal Masses: A Systematic Review and Meta-Analysis
@@ -21,6 +21,9 @@ This repository contains the aggregate study-level data and R code for:
 |-- revision/
 |   |-- analysis/
 |   |   |-- revision_analyses.R
+|   |   |-- management_tier_interreader.R
+|   |   |-- management_tier_intermodality.R
+|   |   |-- variance_swap_sensitivity.R
 |   |   `-- results/
 |   `-- data/
 |       `-- data_correction_log.csv
@@ -62,7 +65,7 @@ Rscript revision/analysis/revision_analyses.R
 
 This command also reproduces the leave-one-study-out checks for all moderator
 contrasts with nominal p<0.05 and the focused leave-one-abstract-study-out
-checks for the inter-reader publication-type contrast.
+checks for the publication-type contrasts in both primary strata.
 
 Each script resolves its input files relative to its own location; no
 author-specific working directory is required.
@@ -82,8 +85,11 @@ author-specific working directory is required.
 - `revision/analysis/results/` contains the tabular outputs from the revision
   analyses, including item-level QAREL counts and denominators, full
   leave-one-study-out iteration results, compact leave-one-study-out summaries,
-  full-model validation checks, and the focused inter-reader publication-type
-  checks.
+  full-model validation checks, focused publication-type checks in both primary
+  strata, management-tier analyses, and variance-source sensitivity analyses.
+  `intermodality_management_tier_rows.csv` provides the per-comparison 2x2
+  management-tier reconstructions underlying the inter-modality management-tier
+  and directional synthesis reported in the Results.
 
 See `DATA_DICTIONARY.md` for variable definitions and analytic conventions.
 

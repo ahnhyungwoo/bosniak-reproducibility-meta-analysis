@@ -63,6 +63,58 @@ all-study and applicable-study denominators and percentages.
 
 ## Revision analysis outputs
 
+### `intermodality_management_tier_rows.csv`
+
+This file contains the 26 CT-MRI and CT-CEUS management-tier comparison rows
+underlying the inter-modality management-tier and directional synthesis reported
+in the Results. Classifications were collapsed at I-IIF versus III-IV or the
+source-defined equivalent, with CT as modality 1 and MRI or CEUS as modality 2.
+
+- `tier_row_id`: stable public row identifier (`IMT01`-`IMT26`).
+- `modality_pair`, `study`, `version_reader`, `n`: comparison context and lesion
+  count.
+- `comparison_id`: link to `meta_analysis/comparisons.csv` where a unique
+  effect-level record was available; blank for nine reconstructed CT-CEUS rows.
+- `lower_lower`: CT lower tier and modality 2 lower tier.
+- `other_higher`: CT lower tier and modality 2 higher tier (an upward crossing).
+- `other_lower`: CT higher tier and modality 2 lower tier (a downward crossing).
+- `higher_higher`: CT higher tier and modality 2 higher tier.
+- `observed_agreement`, `kappa`, `ac1`: per-comparison agreement estimates.
+- `net_other_higher`: `other_higher - other_lower`; positive, zero, and negative
+  values define upward, balanced, and downward net tier shifts, respectively.
+- `reconstruction_status`: `full` when all four 2x2 cells were reconstructable
+  and `direction-only` when only directional crossings and observed agreement
+  were available.
+- `source`: source-table or report location used for reconstruction.
+
+For Rocca (2016), `lower_lower` and `higher_higher` are blank because the
+directional crossings and observed agreement did not identify how concordant
+lesions were divided between the lower and higher tiers; marginal distributions,
+κ, and AC1 therefore could not be reconstructed.
+
+### Management-tier analysis outputs
+
+- `interreader_management_tier_cells.csv` contains the reconstructed lower- and
+  higher-tier 2x2 cells and derived agreement measures for every assessed
+  inter-reader comparison.
+- `interreader_management_tier_summary.csv` contains the RVE+CR2 pooled κ and
+  AC1 analyses at the management-tier boundary.
+- `interreader_management_tier_descriptive.csv` reports comparison counts,
+  study counts, and observed-agreement ranges and medians for the reconstructed
+  inter-reader sets.
+- `interreader_management_tier_accounting.csv` records the reconstruction and
+  inclusion accounting, including excluded or non-estimable tables.
+- `intermodality_management_tier_summary.csv` summarizes the full CT-MRI and
+  CT-CEUS reconstructions and the direction-only Rocca row from
+  `intermodality_management_tier_rows.csv`.
+
+### Additional sensitivity outputs
+
+- `variance_swap_sensitivity.csv` reports the prespecified sampling-variance
+  substitution sensitivity analyses.
+- `version_all_effects_restricted.csv` reports the restricted all-effects
+  version sensitivity analyses.
+
 - `loso_nominal_moderator_iterations.csv` contains one row for every planned
   leave-one-study-out deletion for the seven moderator contrasts with nominal
   p<0.05. It records model estimability, the omitted study, the coefficient,
@@ -74,10 +126,12 @@ all-study and applicable-study denominators and percentages.
 - `loso_nominal_moderator_validation.csv` verifies that every recomputed full
   model matches its row in `meta_regression_revision.csv` before the deletion
   analyses are run.
-- `inter_reader_publication_type_leave_one_abstract.csv` contains the full
-  inter-reader publication-type model and the two focused checks omitting each
-  abstract study in turn, with singleton abstract levels identified as
-  non-interpretable.
+- `publication_type_leave_one_abstract.csv` contains the full publication-type
+  models for the inter-reader and inter-modality strata and the focused checks
+  omitting each abstract study in turn, with singleton abstract levels
+  identified as non-interpretable.
+- `inter_reader_publication_type_leave_one_abstract.csv` is retained as an
+  inter-reader-only extract for compatibility.
 - `possible_cohort_overlap_sensitivity.csv` contains the inter-reader
   single-cohort dependency stress test for Bai (2020) and Kang (2022), the
   corresponding full OPES estimate, and OPES estimates excluding each study in
