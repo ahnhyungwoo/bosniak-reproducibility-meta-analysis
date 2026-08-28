@@ -5,7 +5,7 @@ Israel_2004,Israel,2004,2005 (original with IIF),original,FALSE,No version-displ
 Benjaminov_2006,Benjaminov,2006,2005,original,FALSE,No version-display correction required
 Ascenti_2007,Ascenti,2007,2005,original; unspecified,FALSE,No version-display correction required
 Park_2007,Park,2007,2005,original; unspecified,FALSE,No version-display correction required
-Clevert_2008,Clevert,2008,original (Bosniak 1986/2003/2005),modified; original,FALSE,No version-display correction required
+Clevert_2008,Clevert,2008,original (Bosniak 1986/2003/2005) for CT; modified for US imaging (CEUS),modified; original,TRUE,"Corrected Table 1 display from pre-2019 to Modified; the study-level free-text version omitted the CEUS adaptation, while the analytic coding already recorded std_version_2 = modified"
 Bertolotto_2010,Bertolotto,2010,original (Israel & Bosniak 2005 formulation),original,FALSE,No version-display correction required
 Ignee_2010,Ignee,2010,"original (1993), modified for CEUS",modified; original,FALSE,No version-display correction required
 Kim_2010,Kim,2010,2005 (Israel & Bosniak update),original,FALSE,No version-display correction required

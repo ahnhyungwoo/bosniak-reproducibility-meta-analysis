@@ -802,18 +802,24 @@ version_audit <- stud %>%
     by = "study_id"
   ) %>%
   mutate(
-    submitted_table_display_error = study_id %in% c(
+    v2019_display_error = study_id %in% c(
       "Rosenkrantz_2014", "Seppala_2014", "Rocca_2016",
       "Ragel_2016", "Sanz_2016", "Pitra_2018",
       "Shaish_2019", "Lerchbaumer_2020", "Lucocq_2021"
     ),
-    audit_disposition = if_else(
-      submitted_table_display_error,
-      paste(
+    adapted_display_error = study_id %in% c("Clevert_2008"),
+    submitted_table_display_error = v2019_display_error | adapted_display_error,
+    audit_disposition = case_when(
+      v2019_display_error ~ paste(
         "Corrected Table 1 display from v2019 to original/pre-2019;",
         "error arose in table-generation code, not analytic coding"
       ),
-      "No version-display correction required"
+      adapted_display_error ~ paste(
+        "Corrected Table 1 display from pre-2019 to Modified;",
+        "the study-level free-text version omitted the CEUS adaptation,",
+        "while the analytic coding already recorded std_version_2 = modified"
+      ),
+      TRUE ~ "No version-display correction required"
     )
   ) %>%
   select(
@@ -1514,16 +1520,9 @@ loso_specs <- list(
     target_term = "blinding_reported_binary",
     target_level_studies = NA_character_
   ),
-  list(
-    analysis_id = "IR_region_Europe_vs_North_America",
-    stratum = "Inter-reader",
-    moderator = "Region",
-    contrast = "Europe vs North America",
-    data = ir_region,
-    formula = yi_z ~ region_factor,
-    target_term = "region_factorEurope",
-    target_level_studies = NA_character_
-  ),
+  # The inter-reader Europe-versus-North-America contrast was dropped from this
+  # panel after Chang (2015) and Rocca (2016) were assigned their recorded
+  # regions; the contrast no longer meets the nominal p<0.05 inclusion rule.
   list(
     analysis_id = "IM_categories_4_5_vs_2_3",
     stratum = "Inter-modality",
@@ -1580,9 +1579,9 @@ canonical_nominal <- meta_regression_results %>%
   filter(p_raw < 0.05) %>%
   select(stratum, moderator, contrast, beta, se, df, p_raw, df_interpretation)
 
-if (nrow(canonical_nominal) != 7) {
+if (nrow(canonical_nominal) != 6) {
   stop(sprintf(
-    "Expected seven moderator contrasts with nominal p<0.05, found %d.",
+    "Expected six moderator contrasts with nominal p<0.05, found %d.",
     nrow(canonical_nominal)
   ))
 }
