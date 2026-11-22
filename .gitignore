@@ -12,3 +12,8 @@ meta_analysis/*.txt
 # Operating-system files
 .DS_Store
 Thumbs.db
+revision/figures/r2/data/
+revision/figures/r2/masters_300dpi/
+revision/figures/r2/preview_72dpi/
+revision/figures/r2/figure_inventory.csv
+__pycache__/

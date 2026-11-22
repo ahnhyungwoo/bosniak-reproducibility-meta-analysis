@@ -7,12 +7,20 @@ Each row is an extracted agreement comparison.
 - `comparison_id`, `study_id`: stable comparison and study identifiers.
 - `comparison_type`, `analytic_stratum`: extracted comparison type and the
   analysis stratum used in the meta-analysis.
+  `reader-reference` distinguishes retained comparisons against consensus or
+  an expert standard from independent inter-reader comparisons. It is neither
+  a fifth primary stratum nor an exclusion flag. Sixteen such comparisons
+  remain in the denominator of 332, but not the 203 direct inter-reader records.
 - `modality_1`, `modality_2`, `std_modality_1`, `std_modality_2`: reported and
   standardized imaging modalities.
 - `version_1`, `version_2`, `std_version_1`, `std_version_2`: reported and
   standardized Bosniak versions.
 - `n_readers`, `n_cysts`, `n_categories`, `categories_used`,
   `collapsing_scheme`: sampling and category structure.
+  For Münch's three direct inter-reader comparisons and six comparisons
+  against consensus, `n_cysts=84` denotes independently evaluated CEUS
+  examinations; 168 is the number of presentations to each reader across two
+  rounds. Reported CIs take precedence over the sample-size proxy.
 - `reader_1_specialty`, `reader_2_specialty`,
   `reader_1_experience_yrs`, `reader_2_experience_yrs`, `reader_structure`,
   `specialty_group`, `exp_mean`: reader characteristics and derived groupings.
@@ -116,13 +124,13 @@ lesions were divided between the lower and higher tiers; marginal distributions,
   version sensitivity analyses.
 
 - `loso_nominal_moderator_iterations.csv` contains one row for every planned
-  leave-one-study-out deletion for the seven moderator contrasts with nominal
+  leave-one-study-out deletion for the six moderator contrasts with nominal
   p<0.05. It records model estimability, the omitted study, the coefficient,
   standard error, Satterthwaite degrees of freedom, raw p value, coefficient
   direction, and warnings or failure reason.
 - `loso_nominal_moderator_summary.csv` summarizes the successful and
   non-estimable deletion models, direction consistency, nominal p<0.05 counts,
-  and coefficient and p-value ranges for each of the seven contrasts.
+  and coefficient and p-value ranges for each of the six contrasts.
 - `loso_nominal_moderator_validation.csv` verifies that every recomputed full
   model matches its row in `meta_regression_revision.csv` before the deletion
   analyses are run.
@@ -138,6 +146,38 @@ lesions were divided between the lower and higher tiers; marginal distributions,
   turn.
 
 ## Analytic conventions
+
+- `revision/data/version_matched_pair_audit.csv`: source file/location, matched
+  comparison IDs, reader/lesion/scale/weighting checks and effective counts
+  for each version. A common cohort is not always the same evaluable set.
+  `version_matched_pairs.csv` carries the actual effect and variance inputs.
+  `version_matched_sensitivity.csv`: 12 comparable pairs, all 13 pairs, and
+  alternative Yan pairs; within-pair correlations and normal/Knapp–Hartung
+  inference. The main estimand is the directly pooled within-study difference
+  in κ (v2019 minus pre-2019), not a difference between pooled levels.
+  `version_matched_leave_one_out.csv`: excluded study and its κ difference,
+  remaining pair count, pooled κ difference, CI and p (REML, KH, r=0).
+- `reader_reference_effects_by_study.csv`: study, IDs and descriptive κ
+  range/median; `reader_reference_sensitivity.csv` distinguishes the primary
+  direct-reader model from the 16-effect add-back. The original estimates
+  can be retrieved by comparison ID.
+- In `interreader_management_tier_cells.csv`, `n` is the observed 2×2
+  cell total for an included table; `independent_lesions` separately records
+  84 for MTIR031–038 (blank elsewhere means not separately audited).
+  For these eight tables only, the proxy variance `vi` and the two Fisher-z
+  scale jackknife variances `vi_kappa_jk` and `vi_ac1_jk` are doubled as a
+  conservative approximation for repeated readings, not a lesion-level
+  jackknife. Coefficients and cell counts are unchanged.
+- In three-level output, `sigma2_between` and `sigma2_within` are variance
+  components on the model scale. `pi_lower/upper` predict a new comparison
+  in a new cluster and include both; `pi_cluster_mean_lower/upper` predict a
+  latent cluster mean and include only the between-cluster variance. Both
+  include estimation uncertainty. Single-level OPES intervals have no
+  separate comparison-level component.
+- `publication_bias_summary.csv`: one row per OPES stratum, study count,
+  Egger regression t/df/p, Kendall tau and p, imputed study count and side,
+  pooled and trim-and-fill κ and CIs. These assess small-study effects, not
+  a diagnosis of publication bias.
 
 - Records are analytically active when `exclude` is empty.
 - Agreement coefficients are clamped to the interval -0.995 to 0.995 before

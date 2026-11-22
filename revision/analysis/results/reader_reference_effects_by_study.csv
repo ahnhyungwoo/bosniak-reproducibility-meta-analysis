@@ -1,0 +1,4 @@
+study_id,effects,comparison_ids,kappa_min,kappa_median,kappa_max
+Graumann_2015,6,C086; C087; C088; C089; C090; C091,0.84,0.97,0.98
+He_2026,4,C112; C113; C114; C115,0.75,0.8300000000000001,0.89
+Münch_2024,6,C512; C513; C514; C515; C516; C517,0.59,0.62,0.95

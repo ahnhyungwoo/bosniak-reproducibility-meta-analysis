@@ -209,6 +209,57 @@ cells$yi_kappa <- ifelse(cells$included == 1L, atanh(pmax(pmin(cells$kappa, 0.99
 cells$yi_ac1 <- ifelse(cells$included == 1L, atanh(pmax(pmin(cells$ac1, 0.995), -0.995)), NA_real_)
 cells$vi <- ifelse(cells$included == 1L & cells$n > 3, 1 / (cells$n - 3), NA_real_)
 
+## Coefficient-specific sampling variances on the Fisher-z scale from a
+## delete-one jackknife of each 2x2 table (one replicate per observation), so
+## that kappa and AC1 each carry a variance reflecting the observed margins.
+## If a replicate is not estimable or the variance is zero, 0.5 is added to
+## every cell before resampling.
+jackknife_vi <- function(ll, lh, hl, hh) {
+  one <- function(cells4) {
+    n <- sum(cells4)
+    reps <- NULL
+    weights <- NULL
+    for (j in which(cells4 > 0)) {
+      reduced <- cells4
+      reduced[j] <- reduced[j] - 1
+      s <- calc_stats(reduced[1], reduced[2], reduced[3], reduced[4])
+      reps <- rbind(reps, atanh(pmax(pmin(s[c("kappa", "ac1")], 0.995), -0.995)))
+      weights <- c(weights, cells4[j])
+    }
+    if (any(!is.finite(reps))) return(c(NA_real_, NA_real_))
+    centre <- colSums(reps * weights) / n
+    (n - 1) / n * colSums(weights * sweep(reps, 2, centre)^2)
+  }
+  v <- one(c(ll, lh, hl, hh))
+  if (any(!is.finite(v)) || any(v <= 0)) v <- one(c(ll, lh, hl, hh) + 0.5)
+  v
+}
+cells$vi_kappa_jk <- NA_real_
+cells$vi_ac1_jk <- NA_real_
+for (i in which(cells$included == 1L)) {
+  v <- jackknife_vi(
+    cells$lower_lower[i], cells$lower_higher[i],
+    cells$higher_lower[i], cells$higher_higher[i]
+  )
+  cells$vi_kappa_jk[i] <- v[1]
+  cells$vi_ac1_jk[i] <- v[2]
+}
+
+## Munch: two readings of each of 84 lesions, aggregated without a lesion
+## identifier. Keep all 168 paired observations and the coefficients derived
+## from them. Doubling each sampling VARIANCE is a conservative approximation
+## for repeated readings, not a lesion-level jackknife or an estimated ICC.
+munch_idx <- which(cells$included == 1L & cells$study_id == "Munch_2024")
+stopifnot(identical(cells$effect_id[munch_idx], sprintf("MTIR%03d", 31:38)),
+          all(cells$n[munch_idx] == 168L),
+          sum(cells$source_type[munch_idx] == "direct_reader_pair") == 3L)
+cells$independent_lesions <- NA_integer_  # unknown/not separately audited elsewhere
+cells$independent_lesions[munch_idx] <- 84L
+vcols <- c("vi", "vi_kappa_jk", "vi_ac1_jk")
+cells[munch_idx, vcols] <- cells[munch_idx, vcols] * 2
+cells$notes[munch_idx] <- trimws(paste(cells$notes[munch_idx],
+  "168 paired readings from 84 lesions assessed twice. Sampling variances doubled as a conservative approximation for repeat dependence; not lesion-level resampling."))
+
 stopifnot(sum(cells$included) == 40L)
 stopifnot(length(unique(cells$study_id[cells$included == 1L])) == 14L)
 stopifnot(all(abs(rowSums(cells[cells$included == 1L, c("lower_lower", "lower_higher", "higher_lower", "higher_higher")]) -
@@ -218,11 +269,11 @@ write.csv(cells, file.path(out_dir, "interreader_management_tier_cells.csv"), ro
 
 safe_tcrit <- function(df) if (is.finite(df) && df > 0) qt(0.975, df) else qnorm(0.975)
 
-run_rve <- function(d, yi_col, label) {
-  d <- d[d$included == 1L & is.finite(d[[yi_col]]) & is.finite(d$vi), ]
+run_rve <- function(d, yi_col, label, vi_col = "vi") {
+  d <- d[d$included == 1L & is.finite(d[[yi_col]]) & is.finite(d[[vi_col]]), ]
   model <- rma.mv(
     yi = d[[yi_col]],
-    V = d$vi,
+    V = d[[vi_col]],
     random = list(~ 1 | study_id, ~ 1 | effect_id),
     data = d,
     method = "REML"
@@ -264,7 +315,14 @@ summary_rows <- rbind(
   run_rve(direct, "yi_kappa", "Direct reader pairs only: kappa"),
   run_rve(direct, "yi_ac1", "Direct reader pairs only: AC1"),
   run_rve(bosniak_only, "yi_kappa", "Bosniak classifications only: kappa"),
-  run_rve(bosniak_only, "yi_ac1", "Bosniak classifications only: AC1")
+  run_rve(bosniak_only, "yi_ac1", "Bosniak classifications only: AC1"),
+  ## Same models with coefficient-specific jackknife variances
+  run_rve(direct, "yi_kappa", "Direct reader pairs only: kappa, coefficient-specific variance", "vi_kappa_jk"),
+  run_rve(direct, "yi_ac1", "Direct reader pairs only: AC1, coefficient-specific variance", "vi_ac1_jk"),
+  run_rve(direct_bosniak, "yi_kappa", "Direct reader pairs, Bosniak only: kappa, coefficient-specific variance", "vi_kappa_jk"),
+  run_rve(direct_bosniak, "yi_ac1", "Direct reader pairs, Bosniak only: AC1, coefficient-specific variance", "vi_ac1_jk"),
+  run_rve(included, "yi_kappa", "All reconstructed comparisons: kappa, coefficient-specific variance", "vi_kappa_jk"),
+  run_rve(included, "yi_ac1", "All reconstructed comparisons: AC1, coefficient-specific variance", "vi_ac1_jk")
 )
 write.csv(summary_rows, file.path(out_dir, "interreader_management_tier_summary.csv"), row.names = FALSE)
 

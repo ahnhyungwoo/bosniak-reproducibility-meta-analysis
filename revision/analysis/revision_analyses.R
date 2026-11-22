@@ -91,8 +91,7 @@ if (stud$publication_type[stud$study_id == "Chang_2015"] != "conference_abstract
 
 pediatric_ids <- c("Peng_2010", "Karmazyn_2015", "Frumer_2021", "Peard_2022")
 
-dat <- comp %>%
-  filter(is.na(exclude) | trimws(exclude) == "") %>%
+dat_all <- comp %>%
   left_join(
     stud %>%
       select(
@@ -230,7 +229,18 @@ dat <- comp %>%
   ) %>%
   filter(!is.na(kappa_num), !is.na(vi_z), vi_z > 0)
 
+## dat_all keeps rows flagged in `exclude` so that an audited comparison
+## (for example a collapsed-category duplicate) can be looked up by ID.
+dat <- dat_all %>% filter(is.na(exclude) | trimws(exclude) == "")
+
+## Inter-reader agreement is defined as agreement between readers who
+## classified the same lesions independently. Reader-versus-reference
+## comparisons (a reader against a consensus or gold-standard reading)
+## carry analytic_stratum == "reader-reference" and stay outside the
+## primary inter-reader set; they are added back only in a sensitivity run.
 ir <- dat %>% filter(analytic_stratum == "inter-reader")
+ir_with_reference <- dat %>%
+  filter(analytic_stratum %in% c("inter-reader", "reader-reference"))
 im <- dat %>% filter(analytic_stratum == "inter-modality")
 intra <- dat %>% filter(analytic_stratum == "intra-reader")
 iv <- dat %>% filter(analytic_stratum == "inter-version")
@@ -388,17 +398,25 @@ run_rve <- function(
   df <- robust$df_Satt[1]
   crit <- safe_tcrit(df)
   ci_working <- estimate_working + c(-1, 1) * crit * se
+  ## Prediction target: the true effect of a new individual comparison in a
+  ## new cluster, so both modelled heterogeneity components enter. The
+  ## interval for a new cluster mean (between-cluster component only) is
+  ## reported alongside it.
   pi_working <- estimate_working + c(-1, 1) * crit *
+    sqrt(se^2 + sum(model$sigma2))
+  pi_cluster_working <- estimate_working + c(-1, 1) * crit *
     sqrt(se^2 + model$sigma2[1])
 
   if (outcome == "z") {
     estimate <- tanh(estimate_working)
     ci <- tanh(ci_working)
     pi <- tanh(pi_working)
+    pi_cluster <- tanh(pi_cluster_working)
   } else {
     estimate <- estimate_working
     ci <- pmin(pmax(ci_working, -1), 1)
     pi <- pmin(pmax(pi_working, -1), 1)
+    pi_cluster <- pmin(pmax(pi_cluster_working, -1), 1)
   }
 
   tibble(
@@ -416,7 +434,11 @@ run_rve <- function(
     pi_upper = pi[2],
     robust_se_working_scale = se,
     satterthwaite_df = df,
-    p_value = robust$p_Satt[1]
+    p_value = robust$p_Satt[1],
+    pi_cluster_mean_lower = pi_cluster[1],
+    pi_cluster_mean_upper = pi_cluster[2],
+    sigma2_between = model$sigma2[1],
+    sigma2_within = model$sigma2[2]
   )
 }
 
@@ -606,6 +628,11 @@ summary_parts <- list(
     im %>% filter(representative_spectrum == "Yes"),
     "Inter-modality representative-spectrum studies",
     analysis_family = "representative_spectrum"
+  ),
+  run_rve(
+    ir_with_reference,
+    "Inter-reader including reader-versus-reference effects",
+    analysis_family = "reader_reference"
   )
 )
 
@@ -668,6 +695,7 @@ comparison_accounting <- tibble(
     "Intra-reader comparisons",
     "Inter-version comparisons",
     "Technical/read-condition comparisons",
+    "Reader-versus-reference comparisons",
     "Studies reporting patient count",
     "Patients across reporting studies",
     "Studies reporting cyst count",
@@ -682,6 +710,7 @@ comparison_accounting <- tibble(
     sum(active_comp$analytic_stratum == "intra-reader"),
     sum(active_comp$analytic_stratum == "inter-version"),
     sum(active_comp$analytic_stratum == "technical-comparison"),
+    sum(active_comp$analytic_stratum == "reader-reference"),
     sum(
       stud$study_id %in% included_study_ids &
         !is.na(suppressWarnings(as.numeric(stud$n_patients)))
@@ -891,15 +920,7 @@ version_ct_summary <- tibble(
 )
 write_csv(version_ct_summary, file.path(out_dir, "version_ct_model.csv"))
 
-struct_order <- c(
-  pooled = 1,
-  single_pair = 2,
-  single = 3,
-  pairwise = 4,
-  subgroup = 5,
-  vs_reference = 6
-)
-
+## Studies with inter-reader effects under both versions are the candidates.
 version_pair_candidates <- ir %>%
   filter(std_version_1 %in% c("original", "v2019")) %>%
   group_by(study_id) %>%
@@ -911,137 +932,213 @@ version_pair_candidates <- ir %>%
   filter(has_original, has_v2019) %>%
   pull(study_id)
 
-matched_pairs <- list()
-unmatched_version_studies <- character()
-for (sid in sort(version_pair_candidates)) {
-  study_data <- ir %>%
-    filter(
-      study_id == sid,
-      std_version_1 %in% c("original", "v2019")
-    )
-  original_data <- study_data %>% filter(std_version_1 == "original")
-  v2019_data <- study_data %>% filter(std_version_1 == "v2019")
+## The pairs are fixed by a source audit rather than chosen by an algorithm.
+## revision/data/version_matched_pair_audit.csv records, for each pair,
+## whether readers, lesion sets, category structure, and weighting agree.
+pair_audit <- read_csv(
+  file.path(project_dir, "revision", "data", "version_matched_pair_audit.csv"),
+  show_col_types = FALSE,
+  col_types = cols(.default = col_character())
+) %>%
+  mutate(comparable_structure = comparable_structure == "TRUE")
+unmatched_version_studies <- setdiff(version_pair_candidates, pair_audit$study_id)
 
-  common_cells <- inner_join(
-    original_data %>% distinct(std_modality_1, reader_structure),
-    v2019_data %>% distinct(std_modality_1, reader_structure),
-    by = c("std_modality_1", "reader_structure")
+lookup_effect <- function(id) {
+  row <- dat_all %>% filter(comparison_id == id)
+  if (nrow(row) != 1) stop("Audited comparison not found or not unique: ", id)
+  row
+}
+pair_values <- function(original_id, v2019_id, study) {
+  o <- lookup_effect(original_id)
+  v <- lookup_effect(v2019_id)
+  stopifnot(
+    o$study_id == study, v$study_id == study,
+    o$std_version_1 == "original", v$std_version_1 == "v2019",
+    isTRUE(all.equal(o$nc, v$nc)) ||
+      (original_id == "C157" && v2019_id == "C158" &&
+         o$nc == 60 && v$nc == 61)
   )
-  if (nrow(common_cells) == 0) {
-    unmatched_version_studies <- c(unmatched_version_studies, sid)
-    next
-  }
-
-  common_cells <- common_cells %>%
-    mutate(
-      structure_rank = if_else(
-        reader_structure %in% names(struct_order),
-        unname(struct_order[reader_structure]),
-        99
-      )
-    )
-  cell_candidates <- vector("list", nrow(common_cells))
-  for (idx in seq_len(nrow(common_cells))) {
-    cell_modality <- common_cells$std_modality_1[idx]
-    cell_structure <- common_cells$reader_structure[idx]
-    cell_rows <- study_data %>%
-      filter(
-        std_modality_1 == cell_modality,
-        reader_structure == cell_structure
-      )
-    cell_candidates[[idx]] <- tibble(
-      std_modality_1 = cell_modality,
-      reader_structure = cell_structure,
-      structure_rank = common_cells$structure_rank[idx],
-      maximum_n = max(cell_rows$nc, na.rm = TRUE)
-    )
-  }
-  best_cell <- bind_rows(cell_candidates) %>%
-    arrange(structure_rank, desc(maximum_n)) %>%
-    slice(1)
-
-  pick_one <- function(data, modality_value, structure_value) {
-    data %>%
-      filter(
-        std_modality_1 == modality_value,
-        reader_structure == structure_value
-      ) %>%
-      mutate(n_for_order = coalesce(nc, 0)) %>%
-      arrange(desc(n_for_order), comparison_id) %>%
-      slice(1)
-  }
-
-  original_row <- pick_one(
-    original_data,
-    best_cell$std_modality_1,
-    best_cell$reader_structure
-  )
-  v2019_row <- pick_one(
-    v2019_data,
-    best_cell$std_modality_1,
-    best_cell$reader_structure
-  )
-
-  matched_pairs[[length(matched_pairs) + 1]] <- tibble(
-    study_id = sid,
-    modality = best_cell$std_modality_1,
-    reader_structure = best_cell$reader_structure,
-    original_comparison_id = original_row$comparison_id,
-    v2019_comparison_id = v2019_row$comparison_id,
-    original_kappa = original_row$kappa_num,
-    v2019_kappa = v2019_row$kappa_num,
-    original_yi = original_row$yi_z,
-    v2019_yi = v2019_row$yi_z,
-    original_vi = original_row$vi_z,
-    v2019_vi = v2019_row$vi_z,
-    raw_kappa_difference = v2019_row$kappa_num - original_row$kappa_num
-  )
+  list(o = o, v = v)
 }
 
-matched_pairs <- bind_rows(matched_pairs) %>%
+matched_pairs <- bind_rows(lapply(seq_len(nrow(pair_audit)), function(i) {
+  a <- pair_audit[i, ]
+  p <- pair_values(a$original_comparison_id, a$v2019_comparison_id, a$study_id)
+  stopifnot(as.numeric(a$original_effective_n) == p$o$nc,
+            as.numeric(a$v2019_effective_n) == p$v$nc)
+  z_differences <- p$v$yi_z - p$o$yi_z
+  kappa_differences <- p$v$kappa_num - p$o$kappa_num
+  if (!is.na(a$alternative_pairs) && nzchar(a$alternative_pairs)) {
+    for (alt in strsplit(a$alternative_pairs, ";", fixed = TRUE)[[1]]) {
+      ids <- strsplit(alt, ":", fixed = TRUE)[[1]]
+      q <- pair_values(ids[1], ids[2], a$study_id)
+      z_differences <- c(z_differences, q$v$yi_z - q$o$yi_z)
+      kappa_differences <- c(kappa_differences, q$v$kappa_num - q$o$kappa_num)
+    }
+  }
+  tibble(
+    study_id = a$study_id,
+    modality = a$modality,
+    reader_structure = a$reader_structure,
+    original_comparison_id = a$original_comparison_id,
+    v2019_comparison_id = a$v2019_comparison_id,
+    original_kappa = p$o$kappa_num,
+    v2019_kappa = p$v$kappa_num,
+    original_yi = p$o$yi_z,
+    v2019_yi = p$v$yi_z,
+    original_vi = p$o$vi_z,
+    v2019_vi = p$v$vi_z,
+    original_effective_n = p$o$nc,
+    v2019_effective_n = p$v$nc,
+    raw_kappa_difference = p$v$kappa_num - p$o$kappa_num,
+    comparable_structure = a$comparable_structure,
+    reader_pairs_available = length(z_differences),
+    yi_difference_all_reader_pairs = mean(z_differences),
+    raw_kappa_difference_all_reader_pairs = mean(kappa_differences)
+  )
+})) %>%
   mutate(
     yi_difference = v2019_yi - original_yi,
+    ## Zero within-pair sampling covariance; other values are examined below.
     vi_difference = original_vi + v2019_vi
   )
 write_csv(matched_pairs, file.path(out_dir, "version_matched_pairs.csv"))
 
-original_pooled <- rma(original_yi, original_vi, data = matched_pairs, method = "REML")
-v2019_pooled <- rma(v2019_yi, v2019_vi, data = matched_pairs, method = "REML")
-matched_difference_model <- rma(
-  yi_difference,
-  vi_difference,
-  data = matched_pairs,
-  method = "REML"
+## Var(z2019 - zpre) = v2019 + vpre - 2 r sqrt(v2019 vpre)
+pair_variance <- function(v_original, v_2019, r) {
+  v_original + v_2019 - 2 * r * sqrt(v_original * v_2019)
+}
+## Delta-method variance of kappa from the Fisher-z variance
+kappa_scale_variance <- function(kappa, vz) vz * (1 - kappa^2)^2
+
+fit_matched <- function(d, pair_set, r, test) {
+  z_diff <- d$yi_difference
+  k_diff <- d$raw_kappa_difference
+  z_model <- rma(
+    z_diff, pair_variance(d$original_vi, d$v2019_vi, r),
+    method = "REML", test = test
+  )
+  kappa_model <- rma(
+    k_diff,
+    pair_variance(
+      kappa_scale_variance(d$original_kappa, d$original_vi),
+      kappa_scale_variance(d$v2019_kappa, d$v2019_vi),
+      r
+    ),
+    method = "REML", test = test
+  )
+  baseline <- as.numeric(
+    rma(original_yi, original_vi, data = d, method = "REML")$b[1]
+  )
+  tibble(
+    pair_set = pair_set,
+    pairs = nrow(d),
+    within_pair_correlation = r,
+    inference = if (test == "knha") "Knapp-Hartung" else "normal",
+    z_difference = as.numeric(z_model$b[1]),
+    z_ci_lower = z_model$ci.lb,
+    z_ci_upper = z_model$ci.ub,
+    z_p_value = z_model$pval,
+    z_tau2 = z_model$tau2,
+    kappa_difference = as.numeric(kappa_model$b[1]),
+    kappa_ci_lower = kappa_model$ci.lb,
+    kappa_ci_upper = kappa_model$ci.ub,
+    kappa_p_value = kappa_model$pval,
+    baseline_dependent_kappa_difference =
+      tanh(baseline + as.numeric(z_model$b[1])) - tanh(baseline),
+    baseline_dependent_ci_lower = tanh(baseline + z_model$ci.lb) - tanh(baseline),
+    baseline_dependent_ci_upper = tanh(baseline + z_model$ci.ub) - tanh(baseline)
+  )
+}
+
+comparable_pairs <- matched_pairs %>% filter(comparable_structure)
+## Influence on the primary (direct kappa-difference) estimand: remove each
+## audited pair in turn, not just the study with unequal evaluable counts.
+stopifnot(nrow(comparable_pairs) == 12L, !anyDuplicated(comparable_pairs$study_id))
+pair_influence <- bind_rows(lapply(seq_len(nrow(comparable_pairs)), function(i) {
+  fit <- fit_matched(comparable_pairs[-i, ], "Leave one pair out", 0, "knha")
+  tibble(excluded_study = comparable_pairs$study_id[i],
+         excluded_kappa_difference = comparable_pairs$raw_kappa_difference[i],
+         retained_pairs = fit$pairs, pooled_kappa_difference = fit$kappa_difference,
+         ci_lower = fit$kappa_ci_lower, ci_upper = fit$kappa_ci_upper,
+         p_value = fit$kappa_p_value)
+}))
+write_csv(pair_influence, file.path(out_dir, "version_matched_leave_one_out.csv"))
+matched_sets <- list(
+  list(d = comparable_pairs, label = "Comparable category structure"),
+  list(d = matched_pairs, label = "All audited pairs")
 )
-matched_original_kappa <- tanh(as.numeric(original_pooled$b[1]))
-matched_v2019_kappa <- tanh(as.numeric(v2019_pooled$b[1]))
-matched_difference_kappa <- tanh(
-  as.numeric(original_pooled$b[1]) + as.numeric(matched_difference_model$b[1])
-) - matched_original_kappa
-matched_difference_kappa_ci <- tanh(
-  as.numeric(original_pooled$b[1]) +
-    c(matched_difference_model$ci.lb, matched_difference_model$ci.ub)
-) - matched_original_kappa
+## Replace Yan's selected pair one at a time, using that pair's own
+## estimates AND variances. An average of dependent pairs has no known SE.
+yan <- which(comparable_pairs$study_id == "Yan_2021")
+stopifnot(length(yan) == 1L)
+for (alt in strsplit(pair_audit$alternative_pairs[pair_audit$study_id == "Yan_2021"],
+                     ";", fixed = TRUE)[[1]]) {
+  ids <- strsplit(alt, ":", fixed = TRUE)[[1]]
+  p <- pair_values(ids[1], ids[2], "Yan_2021")
+  d <- comparable_pairs
+  d[yan, c("original_comparison_id","v2019_comparison_id","original_kappa","v2019_kappa",
+           "original_yi","v2019_yi","original_vi","v2019_vi","yi_difference",
+           "raw_kappa_difference","vi_difference")] <- list(
+    ids[1], ids[2], p$o$kappa_num, p$v$kappa_num, p$o$yi_z, p$v$yi_z,
+    p$o$vi_z, p$v$vi_z, p$v$yi_z-p$o$yi_z, p$v$kappa_num-p$o$kappa_num,
+    p$o$vi_z+p$v$vi_z)
+  matched_sets[[length(matched_sets)+1L]] <-
+    list(d = d, label = paste("Comparable category structure, Yan alternative", alt))
+}
+matched_sensitivity <- bind_rows(lapply(matched_sets, function(s) {
+  bind_rows(lapply(c(0, 0.3, 0.5, 0.7, 0.9), function(r) {
+    bind_rows(
+      fit_matched(s$d, s$label, r, "z"),
+      fit_matched(s$d, s$label, r, "knha")
+    )
+  }))
+}))
+write_csv(
+  matched_sensitivity,
+  file.path(out_dir, "version_matched_sensitivity.csv")
+)
+
+## Primary specification: pairs with a comparable category structure, direct
+## pooling of study-level kappa differences, Knapp-Hartung inference, r = 0.
+primary_matched <- matched_sensitivity %>%
+  filter(
+    pair_set == "Comparable category structure",
+    within_pair_correlation == 0
+  )
+primary_kh <- primary_matched %>% filter(inference == "Knapp-Hartung")
+primary_normal <- primary_matched %>% filter(inference == "normal")
+original_pooled <- rma(
+  original_yi, original_vi, data = comparable_pairs, method = "REML"
+)
+v2019_pooled <- rma(
+  v2019_yi, v2019_vi, data = comparable_pairs, method = "REML"
+)
 
 matched_version_summary <- tibble(
-  analysis = "Exact within-study matched version comparison",
+  analysis = "Within-study matched version comparison, comparable category structure",
   candidate_studies = length(version_pair_candidates),
   matched_studies = nrow(matched_pairs),
+  comparable_pair_count = nrow(comparable_pairs),
   unmatched_studies = paste(unmatched_version_studies, collapse = "; "),
-  pooled_original_kappa = matched_original_kappa,
+  pooled_original_kappa = tanh(as.numeric(original_pooled$b[1])),
   pooled_original_ci_lower = tanh(original_pooled$ci.lb),
   pooled_original_ci_upper = tanh(original_pooled$ci.ub),
-  pooled_v2019_kappa = matched_v2019_kappa,
+  pooled_v2019_kappa = tanh(as.numeric(v2019_pooled$b[1])),
   pooled_v2019_ci_lower = tanh(v2019_pooled$ci.lb),
   pooled_v2019_ci_upper = tanh(v2019_pooled$ci.ub),
-  beta_difference_z = as.numeric(matched_difference_model$b[1]),
-  beta_difference_ci_lower_z = matched_difference_model$ci.lb,
-  beta_difference_ci_upper_z = matched_difference_model$ci.ub,
-  p_value = matched_difference_model$pval,
-  approximate_kappa_difference = matched_difference_kappa,
-  approximate_kappa_difference_ci_lower = matched_difference_kappa_ci[1],
-  approximate_kappa_difference_ci_upper = matched_difference_kappa_ci[2],
-  raw_mean_kappa_difference = mean(matched_pairs$raw_kappa_difference)
+  beta_difference_z = primary_normal$z_difference,
+  beta_difference_ci_lower_z = primary_normal$z_ci_lower,
+  beta_difference_ci_upper_z = primary_normal$z_ci_upper,
+  p_value = primary_normal$z_p_value,
+  approximate_kappa_difference = primary_normal$baseline_dependent_kappa_difference,
+  approximate_kappa_difference_ci_lower = primary_normal$baseline_dependent_ci_lower,
+  approximate_kappa_difference_ci_upper = primary_normal$baseline_dependent_ci_upper,
+  raw_mean_kappa_difference = mean(comparable_pairs$raw_kappa_difference),
+  direct_kappa_difference = primary_kh$kappa_difference,
+  direct_kappa_difference_ci_lower = primary_kh$kappa_ci_lower,
+  direct_kappa_difference_ci_upper = primary_kh$kappa_ci_upper,
+  direct_kappa_difference_p_value = primary_kh$kappa_p_value
 )
 write_csv(
   matched_version_summary,

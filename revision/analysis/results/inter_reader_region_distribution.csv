@@ -1,10 +1,10 @@
 section,level,region_display,region_effects,count,percent
 Bosniak version,Non-2019,North America,76,35,46
 Bosniak version,2019 update,North America,76,41,54
-Bosniak version,Non-2019,Asia,51,25,49
-Bosniak version,2019 update,Asia,51,26,51
-Bosniak version,Non-2019,Europe,33,30,91
-Bosniak version,2019 update,Europe,33,3,9
+Bosniak version,Non-2019,Asia,47,21,45
+Bosniak version,2019 update,Asia,47,26,55
+Bosniak version,Non-2019,Europe,21,18,86
+Bosniak version,2019 update,Europe,21,3,14
 Bosniak version,Non-2019,Other/unspecified region,15,9,60
 Bosniak version,2019 update,Other/unspecified region,15,6,40
 Imaging modality,CT,North America,76,19,25
@@ -12,16 +12,16 @@ Imaging modality,MRI,North America,76,14,18
 Imaging modality,CEUS/US,North America,76,9,12
 Imaging modality,CT/MRI,North America,76,16,21
 Imaging modality,Mixed/not reported,North America,76,18,24
-Imaging modality,CT,Asia,51,16,31
-Imaging modality,MRI,Asia,51,23,45
-Imaging modality,CEUS/US,Asia,51,12,24
-Imaging modality,CT/MRI,Asia,51,0,0
-Imaging modality,Mixed/not reported,Asia,51,0,0
-Imaging modality,CT,Europe,33,15,45
-Imaging modality,MRI,Europe,33,2,6
-Imaging modality,CEUS/US,Europe,33,14,42
-Imaging modality,CT/MRI,Europe,33,2,6
-Imaging modality,Mixed/not reported,Europe,33,0,0
+Imaging modality,CT,Asia,47,16,34
+Imaging modality,MRI,Asia,47,23,49
+Imaging modality,CEUS/US,Asia,47,8,17
+Imaging modality,CT/MRI,Asia,47,0,0
+Imaging modality,Mixed/not reported,Asia,47,0,0
+Imaging modality,CT,Europe,21,9,43
+Imaging modality,MRI,Europe,21,2,10
+Imaging modality,CEUS/US,Europe,21,8,38
+Imaging modality,CT/MRI,Europe,21,2,10
+Imaging modality,Mixed/not reported,Europe,21,0,0
 Imaging modality,CT,Other/unspecified region,15,7,47
 Imaging modality,MRI,Other/unspecified region,15,7,47
 Imaging modality,CEUS/US,Other/unspecified region,15,0,0
@@ -29,9 +29,9 @@ Imaging modality,CT/MRI,Other/unspecified region,15,1,7
 Imaging modality,Mixed/not reported,Other/unspecified region,15,0,0
 Publication type,Journal article,North America,76,75,99
 Publication type,Conference abstract,North America,76,1,1
-Publication type,Journal article,Asia,51,51,100
-Publication type,Conference abstract,Asia,51,0,0
-Publication type,Journal article,Europe,33,30,91
-Publication type,Conference abstract,Europe,33,3,9
+Publication type,Journal article,Asia,47,47,100
+Publication type,Conference abstract,Asia,47,0,0
+Publication type,Journal article,Europe,21,18,86
+Publication type,Conference abstract,Europe,21,3,14
 Publication type,Journal article,Other/unspecified region,15,15,100
 Publication type,Conference abstract,Other/unspecified region,15,0,0

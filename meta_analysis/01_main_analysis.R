@@ -232,8 +232,10 @@ run_rve_cr2 <- function(data, label = "") {
   t_crit <- qt(0.975, cr2_df)
   ci_kappa <- tanh(c(pooled_z - t_crit * cr2_se, pooled_z + t_crit * cr2_se))
 
-  pi_z <- c(pooled_z - t_crit * sqrt(cr2_se^2 + mod$sigma2[1]),
-            pooled_z + t_crit * sqrt(cr2_se^2 + mod$sigma2[1]))
+  # Individual comparison in a new cluster; the cluster mean excludes
+  # comparison-level heterogeneity. Both intervals are for true effects.
+  pi_z <- pooled_z + c(-1,1) * t_crit * sqrt(cr2_se^2 + sum(mod$sigma2))
+  cluster_mean_pi <- tanh(pooled_z + c(-1,1) * t_crit * sqrt(cr2_se^2 + mod$sigma2[1]))
   pi_kappa <- tanh(pi_z)
 
   k <- nrow(data)
@@ -249,6 +251,7 @@ run_rve_cr2 <- function(data, label = "") {
   cat(sprintf("Pooled: %.3f (95%% CI: %.3f, %.3f)\n",
               pooled_kappa, ci_kappa[1], ci_kappa[2]))
   cat(sprintf("95%% PI: %.3f to %.3f\n", pi_kappa[1], pi_kappa[2]))
+  cat(sprintf("95%% PI for a new cluster mean: %.3f to %.3f\n", cluster_mean_pi[1], cluster_mean_pi[2]))
   cat(sprintf("CR2: SE=%.4f, df=%.1f, p=%s\n",
               cr2_se, cr2_df, format.pval(cr2$p_Satt, digits = 3)))
   cat(sprintf("tau2: between=%.4f, within=%.4f\n", mod$sigma2[1], mod$sigma2[2]))

@@ -19,16 +19,15 @@ repo_dir <- dirname(
 )
 
 scripts <- c(
-  "meta_analysis/01_main_analysis.R",
-  "meta_analysis/02_additional_sensitivity.R",
-  "meta_analysis/03_publication_bias.R",
-  "meta_analysis/04_forest_plots.R",
-  "meta_analysis/04b_forest_compact.R",
   "revision/analysis/revision_analyses.R",
   "revision/analysis/management_tier_interreader.R",
   "revision/analysis/management_tier_intermodality.R",
-  "revision/analysis/variance_swap_sensitivity.R"
+  "revision/analysis/variance_swap_sensitivity.R",
+  "revision/analysis/reader_reference_sensitivity.R",
+  "revision/analysis/R2_full_table_models.R",
+  "revision/figures/r2/figure_data.R"
 )
+setwd(repo_dir)
 
 rscript <- file.path(
   R.home("bin"),
@@ -44,4 +43,6 @@ for (relative_path in scripts) {
   }
 }
 
-message("\nAll analyses completed successfully.")
+stopifnot(file.copy("revision/figures/r2/data/publication_bias_summary.csv",
+                   "revision/analysis/results/publication_bias_summary.csv", overwrite=TRUE))
+message("\nR2 analyses complete. For final-size figures, run python revision/figures/r2/render_figures.py")

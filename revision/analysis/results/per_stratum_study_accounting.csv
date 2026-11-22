@@ -10,7 +10,6 @@ inter-reader,Rosenkrantz_2014,Rosenkrantz,2014,journal_article,2,kappa,2,1,Inclu
 inter-reader,Seppala_2014,Seppala,2014,journal_article,8,ICC,0,0,Excluded from kappa pooling: only non-kappa metric(s) reported
 inter-reader,Bertolotto_2015,Bertolotto,2015,journal_article,1,kappa,1,1,Included in primary all-eligible-kappa RVE+CR2 model
 inter-reader,Chang_2015,Chang,2015,conference_abstract,1,kappa,1,1,Included in primary all-eligible-kappa RVE+CR2 model
-inter-reader,Graumann_2015,Graumann,2015,journal_article,6,kappa,6,1,Included in primary all-eligible-kappa RVE+CR2 model
 inter-reader,Karmazyn_2015,Karmazyn,2015,journal_article,1,kappa,1,1,Included in primary all-eligible-kappa RVE+CR2 model
 inter-reader,Ferreira_2016,Ferreira,2016,journal_article,2,kappa,2,1,Included in primary all-eligible-kappa RVE+CR2 model
 inter-reader,Ragel_2016,Ragel,2016,journal_article,2,kappa,2,1,Included in primary all-eligible-kappa RVE+CR2 model
@@ -45,10 +44,10 @@ inter-reader,Guo_2024,Guo,2024,journal_article,1,kappa,1,1,Included in primary a
 inter-reader,Jin_2024,Jin,2024,journal_article,15,Gwet AC2,0,0,Excluded from kappa pooling: only non-kappa metric(s) reported
 inter-reader,Kang_2024,Kang,2024,journal_article,1,kappa,1,1,Included in primary all-eligible-kappa RVE+CR2 model
 inter-reader,Lucocq_2024,Lucocq,2024,journal_article,2,kappa,2,1,Included in primary all-eligible-kappa RVE+CR2 model
-inter-reader,Münch_2024,Münch,2024,journal_article,9,kappa,9,1,Included in primary all-eligible-kappa RVE+CR2 model
+inter-reader,Münch_2024,Münch,2024,journal_article,3,kappa,3,1,Included in primary all-eligible-kappa RVE+CR2 model
 inter-reader,Abufaraj_2025,Abufaraj,2025,journal_article,6,kappa,6,1,Included in primary all-eligible-kappa RVE+CR2 model
 inter-reader,Kang_2025,Kang,2025,journal_article,5,kappa,5,1,Included in primary all-eligible-kappa RVE+CR2 model
-inter-reader,He_2026,He,2026,journal_article,6,kappa,6,1,Included in primary all-eligible-kappa RVE+CR2 model
+inter-reader,He_2026,He,2026,journal_article,2,kappa,2,1,Included in primary all-eligible-kappa RVE+CR2 model
 inter-reader,Jin_2026,Jin,2026,journal_article,1,Gwet AC1,0,0,Excluded from kappa pooling: only non-kappa metric(s) reported
 inter-reader,Sebastià_2026,Sebastià,2026,journal_article,1,kappa,1,1,Included in primary all-eligible-kappa RVE+CR2 model
 inter-reader,Urraro_2026,Urraro,2026,journal_article,1,kappa,1,1,Included in primary all-eligible-kappa RVE+CR2 model

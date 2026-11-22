@@ -1,12 +1,13 @@
 item,value
 Included studies,79
 All retained comparisons,332
-Primary-stratum comparisons,311
-Inter-reader comparisons,219
+Primary-stratum comparisons,295
+Inter-reader comparisons,203
 Inter-modality comparisons,45
 Intra-reader comparisons,32
 Inter-version comparisons,15
 Technical/read-condition comparisons,21
+Reader-versus-reference comparisons,16
 Studies reporting patient count,77
 Patients across reporting studies,7691
 Studies reporting cyst count,79
